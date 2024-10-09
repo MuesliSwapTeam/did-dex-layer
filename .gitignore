@@ -1,0 +1,9 @@
+.DS_Store
+.skey
+.vkey
+.test_addr
+.addr
+__pycache__/
+src/auth_nft_minting_tool/node_modules/
+node_modules/
+keys/
