@@ -85,4 +85,30 @@ We provide the following references to `preprod` testnet transactions showing re
 
 - [creation of a new trade](https://preprod.cexplorer.io/tx/66073272374be9e8b2f006a6d858a5792838bce2fdb3d975e26207f874b7fd01)
 
- 
+# Internal Testing Report
+
+## Overview
+
+Internal testing for the Cardano DEX Protocol with DIDs Layer focused on validating the DID minting tool and the orderbook smart contracts. The key objectives were to test the minting of DID NFTs and to ensure the DID layer is integrated properly within the DEX orderbook for user authentication during trades.
+
+## Test Plan
+
+### DID Minting Tool
+Testing was done by accessing the [DID demo website](https://demo.did.muesliswap.com), where a DID NFT was minted, and the transaction was verified on the Preprod Testnet. The minting tool, backend, and on-chain contract interactions worked as expected.
+
+### Orderbook Smart Contracts
+The orderbook smart contracts were deployed using the provided scripts and verified on the Preprod Testnet. Both on-chain and off-chain interactions, including withdrawing matched funds and canceling trades, required valid DID NFTs, ensuring the authentication layer functioned correctly.
+
+## Test Cases and Results
+
+1. **DID Minting Tool**  
+   Minting a DID NFT was successful. Transaction verified on Preprod.
+
+2. **Orderbook Contract Deployment**  
+   Smart contracts were successfully deployed and accessible via the testnet explorer.
+
+3. **Token Minting and Trading**  
+   Test tokens were minted, and a trade was placed with `trader1`. Cancellation without the DID NFT failed as expected, while presenting the DID NFT allowed successful cancellation.
+
+4. **On-chain/Off-chain Interaction**  
+   Off-chain code generated valid transactions, interacting correctly with the on-chain orderbook contracts. DID checks were enforced during all interactions.
