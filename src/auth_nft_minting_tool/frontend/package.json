@@ -1,0 +1,65 @@
+{
+  "name": "ps-auth-test",
+  "version": "0.1.0",
+  "private": true,
+  "dependencies": {
+    "@cardano-foundation/cardano-connect-with-wallet": "^0.2.8",
+    "@craco/craco": "^5.9.0",
+    "@emotion/styled": "^11.11.0",
+    "@emurgo/cardano-serialization-lib-browser": "^12.1.1",
+    "@mui/icons-material": "^5.15.3",
+    "@mui/material": "^5.15.3",
+    "@mui/styled-engine": "^5.15.3",
+    "@reduxjs/toolkit": "^2.0.1",
+    "@testing-library/jest-dom": "^5.17.0",
+    "@testing-library/react": "^13.4.0",
+    "@testing-library/user-event": "^13.5.0",
+    "@types/jest": "^27.5.2",
+    "@types/node": "^16.18.70",
+    "@types/react": "^18.2.47",
+    "@types/react-dom": "^18.2.18",
+    "axios": "^1.6.5",
+    "buffer": "^6.0.3",
+    "fractional": "^1.0.0",
+    "js-sha256": "^0.10.1",
+    "react": "^18.2.0",
+    "react-device-detect": "^2.2.3",
+    "react-dom": "^18.2.0",
+    "react-redux": "^9.0.4",
+    "react-router-dom": "^6.21.1",
+    "react-scripts": "5.0.1",
+    "redux": "^5.0.1",
+    "serve": "^14.2.1",
+    "ssi-auth-lib": "^0.0.11",
+    "typescript": "^4.9.5",
+    "web-vitals": "^2.1.4"
+  },
+  "scripts": {
+    "start": "craco start",
+    "build": "REACT_APP_GTAG='GTM-NB2X2Z7' CI=false GENERATE_SOURCEMAP=false craco build",
+    "build:debug": "CI=false GENERATE_SOURCEMAP=true craco build",
+    "test": "craco test",
+    "eject": "craco eject"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "react-app/jest"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "devDependencies": {
+    "@babel/plugin-proposal-private-property-in-object": "^7.21.11"
+  }
+}
