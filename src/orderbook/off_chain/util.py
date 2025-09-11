@@ -53,3 +53,21 @@ def combine_with_stake_key(
         pycardano.Address.from_primitive(stake_key).staking_part,
         network=address.network,
     )
+
+
+def calculate_bulk_payment_fee(num_payments: int, base_fee: int = 200000) -> int:
+    """Calculate estimated fee for bulk payments."""
+    return base_fee + (num_payments * 50000)  # Base fee + per-output fee
+
+
+def validate_bulk_payments(payments: List[dict]) -> bool:
+    """Validate bulk payment data structure."""
+    required_fields = ['recipient', 'amount']
+    
+    for payment in payments:
+        if not all(field in payment for field in required_fields):
+            return False
+        if payment['amount'] <= 0:
+            return False
+    
+    return True

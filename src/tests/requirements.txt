@@ -1,0 +1,10 @@
+# Test Suite Requirements
+
+# Core testing framework
+pytest>=7.0.0
+
+# Performance monitoring (used in integration tests)
+psutil>=5.9.0
+
+# Optional: Coverage reporting
+pytest-cov>=4.0.0

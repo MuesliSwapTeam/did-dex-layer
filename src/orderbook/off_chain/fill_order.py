@@ -22,12 +22,72 @@ from src.orderbook.off_chain.utils.network import context, show_tx
 from src.orderbook.off_chain.utils.to_script_context import to_address, to_tx_out_ref
 
 
+def should_trigger_stop_loss(order_datum, market_price: float) -> bool:
+    """Check if a stop-loss order should be triggered based on current market price."""
+    if not hasattr(order_datum.params, 'advanced_features') or order_datum.params.advanced_features is None:
+        return False
+    
+    # For this example, we'll use a simple price check
+    # In practice, you'd want more sophisticated price discovery
+    try:
+        advanced_features = order_datum.params.advanced_features
+        if advanced_features.stop_loss_price_num > 0 and market_price is not None:
+            stop_loss_price = advanced_features.stop_loss_price_num / advanced_features.stop_loss_price_den
+            return market_price <= stop_loss_price
+    except:
+        pass
+    return False
+
+
+def meets_minimum_fill(order_datum, fill_amount: int) -> bool:
+    """Check if the fill amount meets the minimum fill requirement."""
+    if not hasattr(order_datum.params, 'advanced_features') or order_datum.params.advanced_features is None:
+        return True
+    
+    try:
+        advanced_features = order_datum.params.advanced_features
+        return fill_amount >= advanced_features.min_fill_amount
+    except:
+        return True
+
+
+def get_appropriate_redeemer(order_datum, fill_amount: int, market_price: Optional[float], 
+                           order_input_index: int, order_output_index: int):
+    """Determine the appropriate redeemer type based on order characteristics."""
+    # Check if this should be a stop-loss match
+    if should_trigger_stop_loss(order_datum, market_price):
+        price_num = int(market_price * 10000) if market_price else 10000
+        price_den = 10000
+        return opshin_orderbook_v3.StopLossMatch(
+            input_index=order_input_index,
+            output_index=order_output_index,
+            filled_amount=fill_amount,
+            trigger_price_num=price_num,
+            trigger_price_den=price_den,
+        )
+    
+    # Check if this is a full match or partial match
+    if fill_amount >= order_datum.buy_amount:
+        return opshin_orderbook_v3.FullMatch(
+            input_index=order_input_index,
+            output_index=order_output_index,
+        )
+    else:
+        return opshin_orderbook_v3.PartialMatch(
+            input_index=order_input_index,
+            output_index=order_output_index,
+            filled_amount=fill_amount,
+        )
+
+
 def main(
     name: str,
     max_amount: int = 50,
     steal: bool = False,
     take_more_reward: Optional[int] = None,
     steal_tokens: bool = False,
+    enable_advanced_matching: bool = True,
+    current_market_price: Optional[float] = None,
 ):
     payment_vkey, payment_skey, payment_address = get_signing_info(
         name, network=network
@@ -110,12 +170,29 @@ def main(
         for i, (order_utxo, order_datum) in enumerate(found_orders_filtered):
             order_input_index = all_inputs_sorted.index(order_utxo)
             order_output_index = i
-            fill_order_redeemer = pycardano.Redeemer(
-                opshin_orderbook_v3.FullMatch(
+            
+            # Calculate fill amount (for now, assume full fill)
+            fill_amount = order_datum.buy_amount
+            
+            # Check if the fill meets minimum requirements
+            if enable_advanced_matching and not meets_minimum_fill(order_datum, fill_amount):
+                print(f"Order {i} does not meet minimum fill requirement, skipping")
+                continue
+            
+            # Get the appropriate redeemer based on order type
+            if enable_advanced_matching:
+                redeemer_data = get_appropriate_redeemer(
+                    order_datum, fill_amount, current_market_price, 
+                    order_input_index, order_output_index
+                )
+            else:
+                # Default to FullMatch for backward compatibility
+                redeemer_data = opshin_orderbook_v3.FullMatch(
                     input_index=order_input_index,
                     output_index=order_output_index,
                 )
-            )
+            
+            fill_order_redeemer = pycardano.Redeemer(redeemer_data)
 
             owner_address = from_address(order_datum.params.owner_address)
             builder.add_script_input(

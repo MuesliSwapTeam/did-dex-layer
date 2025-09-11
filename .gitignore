@@ -7,3 +7,5 @@ __pycache__/
 src/auth_nft_minting_tool/node_modules/
 node_modules/
 keys/
+*.json
+

@@ -11,6 +11,9 @@ def merge_without_duplicates(a: List[bytes], b: List[bytes]) -> List[bytes]:
     Rough estimate allows 1000 bytes / 32 bytes per policy id ~ 31 policy ids
     However for token names no lower bound on the length is given, so we assume 1000 bytes / 1 byte per token name ~ 1000 token names
     """
+    # Ensure inputs are concrete lists (not dict_keys views) for Python execution
+    a = list(a)
+    b = list(b)
     return [x for x in a if not x in b] + b
 
 

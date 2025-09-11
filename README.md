@@ -18,6 +18,8 @@ The directory contains two parts. The first part is the connection to the DID pl
 ### Protocol Explanation
 This section provides a brief explanation of how the DID (Decentralized Identifier) layer functions. Anyone can place a trade by locking funds with the correct datum at the smart contract address. However, to withdraw or cancel an open position, a valid DID NFT (Non-Fungible Token) must be presented. For example, when a user initiates a transaction and later decides to cancel it, they must present the DID NFT during the cancellation process. The smart contract verifies that the policy ID of the DID NFT matches the policy ID of the DID minting tool. Since a "centralized entity" is responsible for verifying and issuing the DID, this validation can be conducted reliably. When a transaction is matched with another transaction, the funds remain in the contract until the user withdraws them. To do so, the user must use the cancel redeemer, which again requires presenting a valid DID NFT. The key benefit of this approach is that while anyone can participate in the protocol, only users who have verified their identity through the DID system will be able to withdraw funds. This ensures a layer of security and accountability within the protocol.
 
+The system now supports multiple DID types (basic verified, accredited investors, business entities) and advanced order features including stop-loss orders, minimum fill amounts, TWAP execution, and atomic order modification. Orders can specify DID requirements for counterparties, enabling compliance-focused trading restrictions.
+
 
 #### *DID Minting Tool*
 The directory `src/auth_nft_minting_tool` contains the source code for
@@ -28,8 +30,8 @@ The directory `src/auth_nft_minting_tool` contains the source code for
 
 #### *Orderbook Smartcontracts with DID layer*
 The directory `src/orderbook` contains the source code for on-chain/off-chain interactions of the orderbook with the relevant authentication NFT
- - `on-chain`: the on-chain smart contracts that are the core of the DEX including the DID layer
- - `off-chain`: code to build examples to interact with the DEX smart contracts 
+ - `on-chain`: the on-chain smart contracts that are the core of the DEX including the DID layer, advanced order types (stop-loss, minimum fill, TWAP), and multi-DID provider support
+ - `off-chain`: code to build examples to interact with the DEX smart contracts, including order modification and DID-based trading restrictions 
 
 
 ### Instructions for using 
@@ -67,10 +69,16 @@ python -m orderbook.off_chain.place_order trader1 trader1 0
 
 ```
 
-This will create a new trade with `trader1` as owner`. You can now only cancel the order when presenting the DID NFT of trader 1. To do this you can mint an authentication NFT through our [DID demo website](https://demo.did.muesliswap.com) and then send it to the wallets of the respective traders. To then cancel the order you can call the relvant cancelation code which constructs the correct transaction and presents the DID NFT during cancelation. 
+This will create a new trade with `trader1` as owner`. You can now only cancel the order when presenting the DID NFT of trader 1. To do this you can mint an authentication NFT through our [DID demo website](https://demo.did.muesliswap.com) and then send it to the wallets of the respective traders. To then cancel the order you can call the relvant cancelation code which constructs the correct transaction and presents the DID NFT during cancelation.
+
+For advanced features, you can place orders with stop-loss prices, DID requirements, or modify existing orders atomically:
 
 ```bash
-python3 -m contracts.offchain.staking.init --wallet voter
+# Place order requiring accredited investors
+python -m orderbook.off_chain.place_order trader1 trader2 0 --require-accredited-investor
+
+# Modify existing order
+python -m orderbook.off_chain.modify_order trader1 --new-buy-amount 150
 ```
 
 # Demos
