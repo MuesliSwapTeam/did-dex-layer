@@ -137,6 +137,8 @@ def order_params(owner_pkh, tokens) -> orderbook.OrderParams:
         orderbook.PosInfPOSIXTime(),  # not used by validator paths tested here
         650_000,  # return_reward
         2_000_000,  # min_utxo
+        orderbook.Nothing(),  # advanced_features
+        orderbook.Nothing(),  # did_requirements
     )
 
 

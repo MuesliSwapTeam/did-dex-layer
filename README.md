@@ -1,10 +1,38 @@
 # Cardano DEX Protocol with DIDs Layer
 
-This repository contains the documentation and code for the implementation
-of the project "Cardano DEX Protocol with DIDs Layer", proposed by the MuesliSwap team
-in Fund 10 of Project Catalyst. 
+This repository contains the documentation and code for the implementation of the project "Cardano DEX Protocol with DIDs Layer", proposed by the MuesliSwap team in Fund 10 of Project Catalyst.
 
-## Structure
+## Table of Contents
+- [Overview](#overview)
+- [System Architecture](#system-architecture)
+- [Repository Structure](#repository-structure)
+- [User Guide](#user-guide)
+- [Advanced Features](#advanced-features)
+- [Testing](#testing)
+- [Demos](#demos)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
+
+## Overview
+
+The Cardano DEX Protocol with DIDs Layer implements a decentralized exchange that integrates Decentralized Identifier (DID) authentication for enhanced security and compliance. The system ensures that while anyone can place trades, only users with verified DIDs can withdraw funds or cancel orders.
+
+### Key Features
+- **DID-Based Authentication**: Integration with Atala PRISM for user verification
+- **Advanced Order Types**: Support for stop-loss orders, minimum fill amounts, and TWAP execution
+- **Multi-DID Provider Support**: Compatibility with various DID verification levels
+- **Compliance Framework**: DID requirements for counterparties in trading
+- **Atomic Order Modification**: Real-time order updates without cancellation
+
+## System Architecture
+
+The system consists of three main components:
+
+1. **DID Authentication Framework**: Handles user verification and NFT minting
+2. **Enhanced Orderbook Contracts**: Smart contracts with integrated DID validation
+3. **Frontend Interface**: User-friendly trading interface with DID integration
+
+## Repository Structure
 
 ### Report
 
@@ -34,7 +62,51 @@ The directory `src/orderbook` contains the source code for on-chain/off-chain in
  - `off-chain`: code to build examples to interact with the DEX smart contracts, including order modification and DID-based trading restrictions 
 
 
-### Instructions for using 
+## User Guide
+
+### Prerequisites
+
+Before getting started, ensure you have the following installed and configured:
+
+#### Software Requirements
+- **Python 3.9+**: Required for running the smart contracts and off-chain code
+- **Node.js 16+**: Required for the frontend components
+- **OpShin**: Smart contract compilation framework
+
+#### Network Requirements
+- **Ogmios Endpoint**: Access to a Cardano node via Ogmios
+- **Preprod Testnet Access**: For testing and demonstration
+
+#### Environment Setup
+
+1. **Clone the Repository**
+   ```bash
+   git clone https://github.com/MuesliSwapTeam/did-dex-layer.git
+   cd did-dex-layer
+   ```
+
+2. **Install Dependencies**
+   ```bash
+   # Install Python dependencies
+   pip install -r requirements.txt
+   
+   # Install test dependencies
+   pip install -r src/tests/requirements.txt
+   
+   # Install frontend dependencies (if using the DID minting tool)
+   cd src/auth_nft_minting_tool/frontend
+   npm install
+   cd ../../..
+   ```
+
+3. **Configure Environment Variables**
+   ```bash
+   export OGMIOS_API_HOST="localhost"
+   export OGMIOS_API_PROTOCOL="ws"
+   export OGMIOS_API_PORT="1337"
+   ```
+
+### Initial Setup
 
 The system can be initialized by deploying the smart contracts in the `onchain` directory using the scripts provided in the `offchain` directory.
 For this, you need to have an Ogmios endpoint available and set the environment variables `OGMIOS_API_HOST`, `OGMIOS_API_PROTOCOL` and `OGMIOS_API_PORT` to the respective values (default `localhost`, `ws` and `1337`). 
@@ -48,38 +120,140 @@ python3 create_key_pair.py trader1
 python3 -m orderbook.create_key_pair trader2
 ```
 
-Then, build the smart contracts. Note that this requires the [`plutonomy-cli`](https://github.com/OpShin/plutonomy-cli) executable present in the `PATH` environment variable.
+Fund these wallets using the [Cardano Preprod Testnet Faucet](https://docs.cardano.org/cardano-testnet/tools/faucet/). **Important**: Select the `preprod` network!
+
+#### 2. Compile Smart Contracts
+
+Build the orderbook smart contracts:
 
 ```bash
 cd src/orderbook/on_chain
 opshin compile spending orderbook.py --recursion-limit 2000
-``` 
-
-We need to mint additional tokens for trading. For this we can use the mint_free script. You can for example call
-
-```bash
-python -m orderbook.off_chain.mint_free trader1
-
 ```
 
-You can for example create a first trade for `trader1` by calling
+This generates the necessary contract files in the `build/` directory.
+
+#### 3. Mint Test Tokens
+
+Create test tokens for trading:
+
+```bash
+cd src/orderbook
+python -m orderbook.off_chain.mint_free trader1
+python -m orderbook.off_chain.mint_free trader2
+```
+
+### Basic Trading Operations
+
+#### 1. Place an Order
+
+Create a new trading order:
 
 ```bash
 python -m orderbook.off_chain.place_order trader1 trader1 0
-
 ```
 
-This will create a new trade with `trader1` as owner`. You can now only cancel the order when presenting the DID NFT of trader 1. To do this you can mint an authentication NFT through our [DID demo website](https://demo.did.muesliswap.com) and then send it to the wallets of the respective traders. To then cancel the order you can call the relvant cancelation code which constructs the correct transaction and presents the DID NFT during cancelation.
+#### 2. Order Cancellation
 
-For advanced features, you can place orders with stop-loss prices, DID requirements, or modify existing orders atomically:
+Cancel an order (requires DID NFT from the test script):
 
 ```bash
-# Place order requiring accredited investors
+python -m orderbook.off_chain.cancel_order trader1 [ORDER_ID]
+```
+
+This will create a new trade with `trader1` as owner`. You can now only cancel the order when presenting the DID NFT of trader 1. To do this you can mint an authentication NFT through a DID demo and then send it to the wallets of the respective traders. To then cancel the order you can call the relvant cancelation code which constructs the correct transaction and presents the DID NFT during cancelation.
+
+## Advanced Features
+
+### Multi-DID Types and Requirements
+
+The system supports multiple DID verification levels:
+
+- **Basic Verified Users**: Standard DID authentication
+- **Accredited Investors**: Enhanced verification for institutional trading
+- **Business Entities**: Corporate account verification
+
+#### Place Orders with DID Requirements
+
+```bash
+# Require accredited investor status for counterparty
 python -m orderbook.off_chain.place_order trader1 trader2 0 --require-accredited-investor
 
-# Modify existing order
-python -m orderbook.off_chain.modify_order trader1 --new-buy-amount 150
+# Require business entity verification
+python -m orderbook.off_chain.place_order trader1 trader2 0 --require-business-entity
 ```
+
+### Advanced Order Types
+
+#### Stop-Loss Orders
+
+Place orders with automatic execution triggers:
+
+```bash
+python -m orderbook.off_chain.place_order trader1 trader2 0 --stop-loss-price 50
+```
+
+#### Minimum Fill Orders
+
+Ensure orders are only filled above a minimum threshold:
+
+```bash
+python -m orderbook.off_chain.place_order trader1 trader2 0 --minimum-fill 100
+```
+
+#### TWAP (Time-Weighted Average Price) Execution
+
+Execute large orders gradually over time:
+
+```bash
+python -m orderbook.off_chain.place_order trader1 trader2 0 --twap-duration 3600
+```
+
+### Order Management
+
+#### Atomic Order Modification
+
+Modify existing orders without cancellation:
+
+```bash
+# Update order amount
+python -m orderbook.off_chain.modify_order trader1 --new-buy-amount 150
+
+# Update order price
+python -m orderbook.off_chain.modify_order trader1 --new-price 75
+
+# Update stop-loss trigger
+python -m orderbook.off_chain.modify_order trader1 --new-stop-loss 45
+```
+
+#### Bulk Order Operations
+
+Execute multiple operations in a single transaction:
+
+```bash
+python -m orderbook.off_chain.bulk_payments trader1 --orders order1,order2,order3
+```
+
+## Testing
+
+For comprehensive testing documentation, please refer to the [TEST_USER_GUIDE.md](TEST_USER_GUIDE.md).
+
+### Quick Test Execution
+
+Run the complete test suite:
+
+```bash
+python src/tests/run_all_tests.py
+```
+
+### Test Categories
+
+- **Integration Tests**: End-to-end system testing
+- **Contract Tests**: Smart contract validation
+- **DID Authentication Tests**: Authentication flow testing
+- **Performance Tests**: Load and stress testing
+
+For detailed testing instructions, setup requirements, and troubleshooting, see the [Test User Guide](TEST_USER_GUIDE.md).
 
 # Demos
 
@@ -97,6 +271,99 @@ We provide the following references to `preprod` testnet transactions showing re
 - [creation of a new trade](https://preprod.cexplorer.io/tx/66073272374be9e8b2f006a6d858a5792838bce2fdb3d975e26207f874b7fd01)
 
 - [cancel of a trade while presenting a DID Test NFT](https://preprod.cexplorer.io/tx/493b5d334a75d9655f749a027978d452f2a5b799f4622455cc0f0db359ac4148)
+
+## Troubleshooting
+
+### Common Issues and Solutions
+
+#### Environment Setup Issues
+
+**ModuleNotFoundError: No module named 'orderbook'**
+- Ensure you're running commands from the project root directory
+- Verify Python path includes the `src/` directory:
+  ```bash
+  export PYTHONPATH="${PYTHONPATH}:$(pwd)/src"
+  ```
+
+**Command not found: python**
+- On macOS/Linux, use `python3` instead of `python`
+- Ensure Python 3.9+ is installed:
+  ```bash
+  python3 --version
+  ```
+
+#### Network and Connection Issues
+
+**Ogmios connection failed**
+- Verify Ogmios is running on the specified host/port
+- Check environment variables:
+  ```bash
+  echo $OGMIOS_API_HOST $OGMIOS_API_PROTOCOL $OGMIOS_API_PORT
+  ```
+- Test connection manually:
+  ```bash
+  curl -X POST http://localhost:1337 -H "Content-Type: application/json"
+  ```
+
+**Preprod testnet issues**
+- Ensure wallets have sufficient ADA (minimum 5 ADA recommended)
+- Verify you're using the correct network (preprod, not mainnet)
+- Check testnet status at [Cardano status page](https://status.cardano.org/)
+
+#### Smart Contract Issues
+
+**Contract compilation failed**
+- Verify OpShin installation:
+  ```bash
+  pip install opshin
+  ```
+- Increase recursion limit if needed:
+  ```bash
+  opshin compile spending orderbook.py --recursion-limit 3000
+  ```
+- Clear build cache and recompile:
+  ```bash
+  rm -rf build/
+  opshin compile spending orderbook.py
+  ```
+
+#### DID Authentication Issues
+
+**DID NFT minting failed**
+- Verify the DID demo website is accessible
+- Check wallet connectivity in browser
+- Ensure sufficient ADA for minting fees (minimum 2 ADA)
+- Try refreshing the page and reconnecting wallet
+
+**Order cancellation rejected**
+- Verify DID NFT is in the correct wallet
+- Check NFT policy ID matches the expected DID policy
+- Ensure NFT hasn't been accidentally spent or burned
+
+### Performance Optimization
+
+#### Slow Transaction Building
+- Use bulk operations when possible
+- Optimize UTXO selection by consolidating small UTXOs
+- Consider parallel processing for multiple operations
+
+#### Memory Usage
+- Monitor system resources during large operations:
+  ```bash
+  python src/tests/run_all_tests.py --performance-only
+  ```
+
+### Getting Help
+
+If you encounter issues not covered here:
+
+1. Check the [Test User Guide](TEST_USER_GUIDE.md) for testing-specific troubleshooting
+2. Review recent transactions on [Preprod Explorer](https://preprod.cexplorer.io/)
+3. Join the MuesliSwap community discussions
+4. Create an issue on the GitHub repository with:
+   - Error messages
+   - System information (OS, Python version)
+   - Steps to reproduce
 
 # Internal Testing Report
 

@@ -40,6 +40,34 @@ class AdvancedOrderFeatures(PlutusData):
 
 
 @dataclass()
+class DIDType(PlutusData):
+    """
+    Different types of DID authentication levels
+    """
+    CONSTR_ID = 0
+    # DID provider policy ID
+    policy_id: bytes
+    # Required token name pattern (empty bytes means any token name accepted)
+    required_token_name: bytes
+    # Minimum authentication level (0 = basic, 1 = verified, 2 = accredited, 3 = institutional)
+    min_auth_level: int
+
+
+@dataclass()
+class DIDRequirements(PlutusData):
+    """
+    DID requirements for order execution
+    """
+    CONSTR_ID = 0
+    # List of accepted DID types (empty list means any DID accepted)
+    accepted_did_types: List[DIDType]
+    # Whether both parties need to meet DID requirements
+    require_counterparty_did: int  # 0 = no, 1 = yes
+    # Whether to allow trading with non-DID users
+    allow_non_did_trading: int  # 0 = no, 1 = yes
+
+
+@dataclass()
 class OrderParams(PlutusData):
     """
     Unchangable parameters of an order
@@ -147,40 +175,12 @@ DID_NFT_POLICY_ID = bytes.fromhex(
 
 # Example additional DID provider policy IDs
 ACCREDITED_INVESTOR_POLICY_ID = bytes.fromhex(
-    "abc123e79585ad1543ef6b4b6c8989a17adcea3040f77ede128d456"
+    "abc123e79585ad1543ef6b4b6c8989a17adcea3040f77ede128d9456"
 )
 
 BUSINESS_ENTITY_POLICY_ID = bytes.fromhex(
-    "def456e79585ad1543ef6b4b6c8989a17adcea3040f77ede128d789"
+    "def456e79585ad1543ef6b4b6c8989a17adcea3040f77ede128d9789"
 )
-
-
-@dataclass()
-class DIDType(PlutusData):
-    """
-    Different types of DID authentication levels
-    """
-    CONSTR_ID = 0
-    # DID provider policy ID
-    policy_id: bytes
-    # Required token name pattern (empty bytes means any token name accepted)
-    required_token_name: bytes
-    # Minimum authentication level (0 = basic, 1 = verified, 2 = accredited, 3 = institutional)
-    min_auth_level: int
-
-
-@dataclass()
-class DIDRequirements(PlutusData):
-    """
-    DID requirements for order execution
-    """
-    CONSTR_ID = 0
-    # List of accepted DID types (empty list means any DID accepted)
-    accepted_did_types: List[DIDType]
-    # Whether both parties need to meet DID requirements
-    require_counterparty_did: int  # 0 = no, 1 = yes
-    # Whether to allow trading with non-DID users
-    allow_non_did_trading: int  # 0 = no, 1 = yes
 
 
 def get_user_did_info(user_address: Address, tx_info: TxInfo) -> List[Token]:

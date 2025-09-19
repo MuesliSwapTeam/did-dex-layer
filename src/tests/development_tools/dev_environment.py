@@ -33,7 +33,6 @@ class DevelopmentEnvironment:
             'node_version': '18+',
             'cardano_tools': {
                 'opshin': True,
-                'plutonomy_cli': True,
                 'cardano_cli': True
             },
             'services': {
@@ -167,9 +166,6 @@ class DevelopmentEnvironment:
         
         if tools_config.get('opshin', False):
             self._install_opshin()
-        
-        if tools_config.get('plutonomy_cli', False):
-            self._install_plutonomy_cli()
         
         if tools_config.get('cardano_cli', False):
             self._install_cardano_cli()
@@ -506,10 +502,6 @@ if __name__ == "__main__":
             print("   ✅ OpShin installed")
         except subprocess.CalledProcessError:
             print("   ⚠ OpShin installation failed")
-    
-    def _install_plutonomy_cli(self):
-        """Install Plutonomy CLI."""
-        print("   ⚠ Plutonomy CLI installation not automated - please install manually")
     
     def _install_cardano_cli(self):
         """Install Cardano CLI."""
