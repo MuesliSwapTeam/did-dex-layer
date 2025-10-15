@@ -9,3 +9,17 @@ node_modules/
 keys/
 *.json
 src/.coverage
+src/on_chain/build
+
+# Python virtual environment
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

@@ -1,0 +1,7 @@
+# Ignore source checkouts
+pycardano/
+
+# Keep the README and wheel files
+!README.md
+!*.whl
+

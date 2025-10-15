@@ -62,12 +62,12 @@ def calculate_bulk_payment_fee(num_payments: int, base_fee: int = 200000) -> int
 
 def validate_bulk_payments(payments: List[dict]) -> bool:
     """Validate bulk payment data structure."""
-    required_fields = ['recipient', 'amount']
-    
+    required_fields = ["recipient", "amount"]
+
     for payment in payments:
         if not all(field in payment for field in required_fields):
             return False
-        if payment['amount'] <= 0:
+        if payment["amount"] <= 0:
             return False
-    
+
     return True

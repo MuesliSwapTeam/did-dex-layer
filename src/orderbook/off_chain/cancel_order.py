@@ -11,12 +11,12 @@ from pycardano import (
     AuxiliaryData,
     AlonzoMetadata,
     Metadata,
-    Network, 
-    ScriptHash
+    Network,
+    ScriptHash,
 )
 
 from orderbook.off_chain.util import sorted_utxos
-from orderbook.on_chain import orderbook 
+from orderbook.on_chain import orderbook
 from orderbook.off_chain.utils.keys import get_signing_info, get_address
 from orderbook.off_chain.utils.contracts import get_contract
 from orderbook.off_chain.utils.from_script_context import from_address
@@ -24,9 +24,9 @@ from orderbook.off_chain.utils.network import context, show_tx
 from orderbook.off_chain.utils.to_script_context import to_address, to_tx_out_ref
 
 
-
 DID_NFT_POLICY_ID = "672ae1e79585ad1543ef6b4b6c8989a17adcea3040f77ede128d9217"
 DID_NFT_POLICY_ID = ScriptHash.from_primitive(DID_NFT_POLICY_ID)
+
 
 @click.command()
 @click.argument("name")
@@ -73,7 +73,7 @@ def main(
     if valid_did_utxo is None:
         print("No valid DID outxo found")
         return
-    
+
     all_inputs_sorted = sorted_utxos(payment_utxos + [owner_order_utxo])
     did_input_index = all_inputs_sorted.index(valid_did_utxo)
     cancel_redeemer = pycardano.Redeemer(
@@ -85,9 +85,7 @@ def main(
     # Build the transaction
     builder = TransactionBuilder(context)
     builder.auxiliary_data = AuxiliaryData(
-        data=AlonzoMetadata(
-            metadata=Metadata({674: {"msg": ["Cancel DID Order"]}})
-        )
+        data=AlonzoMetadata(metadata=Metadata({674: {"msg": ["Cancel DID Order"]}}))
     )
     for u in payment_utxos:
         builder.add_input(u)
@@ -98,10 +96,9 @@ def main(
         cancel_redeemer,
     )
 
-    _return_value = owner_order_utxo.output.amount.coin 
+    _return_value = owner_order_utxo.output.amount.coin
 
     print("return_value", _return_value)
-    return 
 
     builder.add_output(
         TransactionOutput(

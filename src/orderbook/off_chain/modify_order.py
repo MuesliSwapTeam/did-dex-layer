@@ -18,7 +18,7 @@ from pycardano import (
     AlonzoMetadata,
     Metadata,
     Network,
-    ScriptHash
+    ScriptHash,
 )
 
 from orderbook.off_chain.util import sorted_utxos
@@ -30,7 +30,9 @@ from orderbook.off_chain.utils.network import context, show_tx
 from orderbook.off_chain.utils.to_script_context import to_address, to_tx_out_ref
 
 # DID policy IDs for validation
-DID_NFT_POLICY_ID = bytes.fromhex("672ae1e79585ad1543ef6b4b6c8989a17adcea3040f77ede128d9217")
+DID_NFT_POLICY_ID = bytes.fromhex(
+    "672ae1e79585ad1543ef6b4b6c8989a17adcea3040f77ede128d9217"
+)
 DID_NFT_POLICY_ID = ScriptHash.from_primitive(DID_NFT_POLICY_ID)
 
 
@@ -42,7 +44,7 @@ DID_NFT_POLICY_ID = ScriptHash.from_primitive(DID_NFT_POLICY_ID)
     help="New amount of token to sell (if different from original)",
 )
 @click.option(
-    "--new-buy-amount", 
+    "--new-buy-amount",
     type=int,
     help="New amount of token to buy (if different from original)",
 )
@@ -72,7 +74,7 @@ DID_NFT_POLICY_ID = ScriptHash.from_primitive(DID_NFT_POLICY_ID)
     help="Require counterparty to be an accredited investor",
 )
 @click.option(
-    "--require-business-entity", 
+    "--require-business-entity",
     is_flag=True,
     help="Require counterparty to be a business entity",
 )
@@ -95,28 +97,23 @@ def main(
 ):
     """
     Modify an existing order by canceling it and placing a new one in the same transaction.
-    
+
     This ensures atomic order modification - either both operations succeed or both fail,
     preventing the user from being left without an active order.
-    
+
     Examples:
-    
+
     # Modify order to new buy amount
-    python modify_order.py alice --new-buy-amount 150
-    
+    python -m orderbook.off_chain.modify_order trader1 --new-buy-amount 50
+
     # Change order to require accredited investors only
-    python modify_order.py bob --require-accredited-investor
-    
-    # Update stop-loss price and minimum fill amount
-    python modify_order.py charlie --new-stop-loss-price 1.5 --new-min-fill-amount 50
+    python -m orderbook.off_chain.modify_order trader2 --require-accredited-investor
     """
-    
+
     payment_vkey, payment_skey, payment_address = get_signing_info(
         name, network=Network.TESTNET
     )
-    orderbook_script, _, orderbook_address = get_contract(
-        "orderbook", False, context
-    )
+    orderbook_script, _, orderbook_address = get_contract("orderbook", False, context)
     free_minting_contract_script, free_minting_contract_hash, _ = get_contract(
         "free_mint", False
     )
@@ -129,10 +126,12 @@ def main(
             order_datum = orderbook.Order.from_cbor(utxo.output.datum.cbor)
         except Exception as e:
             continue
-        
+
         owner_pkh = order_datum.params.owner_pkh
-        user_payment_pkh = to_address(payment_address).payment_credential.credential_hash
-        
+        user_payment_pkh = to_address(
+            payment_address
+        ).payment_credential.credential_hash
+
         if owner_pkh != user_payment_pkh:
             continue
 
@@ -155,40 +154,67 @@ def main(
             continue
         valid_did_utxo = utxo
         break
-    
+
     if valid_did_utxo is None:
         print("No valid DID NFT found - required for order modification")
         return
 
     # Prepare new order parameters based on existing order and modifications
     original_params = user_order_datum.params
-    
+
     # Use new values if provided, otherwise keep original values
-    sell_amount = new_sell_amount if new_sell_amount is not None else get_sell_amount_from_utxo(user_order_utxo, original_params.sell)
-    buy_amount = new_buy_amount if new_buy_amount is not None else user_order_datum.buy_amount
-    
+    sell_amount = (
+        new_sell_amount
+        if new_sell_amount is not None
+        else get_sell_amount_from_utxo(user_order_utxo, original_params.sell)
+    )
+    buy_amount = (
+        new_buy_amount if new_buy_amount is not None else user_order_datum.buy_amount
+    )
+
     # Create advanced features (merge new and existing)
     stop_loss_price = new_stop_loss_price
     min_fill_amount = new_min_fill_amount if new_min_fill_amount is not None else 0
     twap_interval = new_twap_interval if new_twap_interval is not None else 0
     max_slippage = new_max_slippage if new_max_slippage is not None else 0.0
-    
+
     # If original order had advanced features, preserve them unless overridden
     if not isinstance(original_params.advanced_features, orderbook.Nothing):
         orig_features = original_params.advanced_features
         if stop_loss_price is None and orig_features.stop_loss_price_num > 0:
-            stop_loss_price = orig_features.stop_loss_price_num / orig_features.stop_loss_price_den
+            stop_loss_price = (
+                orig_features.stop_loss_price_num / orig_features.stop_loss_price_den
+            )
         if new_min_fill_amount is None:
             min_fill_amount = orig_features.min_fill_amount
         if new_twap_interval is None:
-            twap_interval = orig_features.twap_interval // (60 * 1000)  # Convert back to minutes
+            twap_interval = orig_features.twap_interval // (
+                60 * 1000
+            )  # Convert back to minutes
         if new_max_slippage is None:
             max_slippage = orig_features.max_slippage_bps / 100.0
-    
+
+    # Filter payment UTXOs to only include necessary ones (reduce transaction size)
+    # We need: DID NFT utxo + minimal ADA utxos for fees
+    # The orderbook script is 33KB so we need to keep the transaction as small as possible
+    necessary_utxos = [valid_did_utxo]
+
+    # Add up to 2 ADA-only UTXOs for fees (the minimum needed)
+    ada_only_count = 0
+    for utxo in payment_utxos:
+        if utxo == valid_did_utxo:
+            continue
+        # Only include UTXOs with pure ADA (no multi-assets)
+        if len(utxo.output.amount.multi_asset) == 0:
+            necessary_utxos.append(utxo)
+            ada_only_count += 1
+            if ada_only_count >= 2:
+                break
+
     # Build transaction that cancels old order and places new one
-    all_inputs_sorted = sorted_utxos(payment_utxos + [user_order_utxo])
+    all_inputs_sorted = sorted_utxos(necessary_utxos + [user_order_utxo])
     did_input_index = all_inputs_sorted.index(valid_did_utxo)
-    
+
     cancel_redeemer = pycardano.Redeemer(
         orderbook.CancelOrder(
             input_index=did_input_index,
@@ -201,11 +227,11 @@ def main(
             metadata=Metadata({674: {"msg": ["MuesliSwap Modify Order"]}})
         )
     )
-    
-    # Add all user inputs
-    for u in payment_utxos:
+
+    # Add necessary user inputs
+    for u in necessary_utxos:
         builder.add_input(u)
-    
+
     # Cancel the existing order
     builder.add_script_input(
         user_order_utxo,
@@ -221,11 +247,11 @@ def main(
     # Token configuration (keep same tokens as original order)
     sell_token = (
         pycardano.ScriptHash(original_params.sell.policy_id),
-        pycardano.AssetName(original_params.sell.token_name)
+        pycardano.AssetName(original_params.sell.token_name),
     )
     buy_token = (
         pycardano.ScriptHash(original_params.buy.policy_id),
-        pycardano.AssetName(original_params.buy.token_name)
+        pycardano.AssetName(original_params.buy.token_name),
     )
 
     # Create advanced features if any are specified
@@ -235,40 +261,40 @@ def main(
         stop_loss_den = 10000 if stop_loss_price else 1
         twap_interval_ms = twap_interval * 60 * 1000
         slippage_bps = int(max_slippage * 100)
-        
+
         advanced_features = orderbook.AdvancedOrderFeatures(
             stop_loss_num,
             stop_loss_den,
             min_fill_amount,
             twap_interval_ms,
-            slippage_bps
+            slippage_bps,
         )
 
     # Create DID requirements if any are specified
     did_requirements = orderbook.Nothing()
     if require_accredited_investor or require_business_entity or allow_non_did_trading:
         accepted_did_types = []
-        
+
         if require_accredited_investor:
             accredited_did_type = orderbook.DIDType(
                 orderbook.ACCREDITED_INVESTOR_POLICY_ID,
                 b"",  # Any token name
-                2     # Accredited investor level
+                2,  # Accredited investor level
             )
             accepted_did_types.append(accredited_did_type)
-        
+
         if require_business_entity:
             business_did_type = orderbook.DIDType(
                 orderbook.BUSINESS_ENTITY_POLICY_ID,
                 b"",  # Any token name
-                3     # Business entity level
+                3,  # Business entity level
             )
             accepted_did_types.append(business_did_type)
-        
+
         did_requirements = orderbook.DIDRequirements(
             accepted_did_types,
             1,  # Require counterparty DID
-            1 if allow_non_did_trading else 0  # Allow non-DID trading
+            1 if allow_non_did_trading else 0,  # Allow non-DID trading
         )
     elif not isinstance(original_params.did_requirements, orderbook.Nothing):
         # Preserve original DID requirements if no new ones specified
@@ -277,22 +303,20 @@ def main(
     # Create new order parameters
     min_utxo = original_params.min_utxo
     return_reward = original_params.return_reward
-    
+
     new_params = orderbook.OrderParams(
         beneficiary_pkh.payload,
         to_address(beneficiary_address),
         orderbook.Token(buy_token[0].payload, buy_token[1].payload),
         orderbook.Token(sell_token[0].payload, sell_token[1].payload),
         1,  # Allow partial fills
-        orderbook.FinitePOSIXTime(
-            int(datetime.datetime.now().timestamp() * 1000)
-        ),
+        orderbook.FinitePOSIXTime(int(datetime.datetime.now().timestamp() * 1000)),
         return_reward,
         min_utxo,
         advanced_features,
         did_requirements,
     )
-    
+
     # Make new order datum
     new_datum = orderbook.Order(
         new_params,
@@ -341,7 +365,7 @@ def get_sell_amount_from_utxo(utxo, sell_token):
     """Extract the sell token amount from the UTXO"""
     sell_policy_id = pycardano.ScriptHash(sell_token.policy_id)
     sell_token_name = pycardano.AssetName(sell_token.token_name)
-    
+
     if utxo.output.amount.multi_asset.get(sell_policy_id):
         return utxo.output.amount.multi_asset[sell_policy_id].get(sell_token_name, 0)
     return 0

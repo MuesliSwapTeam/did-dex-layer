@@ -3,7 +3,7 @@ import datetime
 import pycardano
 from opshin.prelude import *
 
-from orderbook.off_chain.utils import network
+from orderbook.off_chain.utils.network import network
 
 
 def from_staking_credential(

@@ -25,7 +25,7 @@ def module_name(module):
 
 
 def get_contract(name, compressed=False, context: ChainContext = None):
-     
+
     with open(
         build_dir.joinpath(f"{name}{'_compressed' if compressed else ''}/script.cbor")
     ) as f:
@@ -37,11 +37,11 @@ def get_contract(name, compressed=False, context: ChainContext = None):
     contract_script_hash = plutus_script_hash(contract_plutus_script)
     contract_script_address = Address(contract_script_hash, network=Network.TESTNET)
 
-    #if context is not None:
+    # if context is not None:
     #    ref_utxo = get_ref_utxo(contract_plutus_script, context)
     #    if ref_utxo is not None:
     #        contract_plutus_script = ref_utxo
-    
+
     return contract_plutus_script, contract_script_hash, contract_script_address
 
 

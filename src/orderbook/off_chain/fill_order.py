@@ -13,26 +13,32 @@ from pycardano import (
     Metadata,
 )
 
-from src.orderbook.off_chain.util import sorted_utxos
-from src.orderbook.on_chain.orderbook import opshin_orderbook_v3
-from src.orderbook.off_chain.utils import get_signing_info, get_address, network
-from src.orderbook.off_chain.utils.contracts import get_contract
-from src.orderbook.off_chain.utils.from_script_context import from_address
-from src.orderbook.off_chain.utils.network import context, show_tx
-from src.orderbook.off_chain.utils.to_script_context import to_address, to_tx_out_ref
+from orderbook.off_chain.util import sorted_utxos
+from orderbook.on_chain import orderbook
+from orderbook.off_chain.utils.keys import get_signing_info, get_address, network
+from orderbook.off_chain.utils.contracts import get_contract
+from orderbook.off_chain.utils.from_script_context import from_address
+from orderbook.off_chain.utils.network import context, show_tx
+from orderbook.off_chain.utils.to_script_context import to_address, to_tx_out_ref
 
 
 def should_trigger_stop_loss(order_datum, market_price: float) -> bool:
     """Check if a stop-loss order should be triggered based on current market price."""
-    if not hasattr(order_datum.params, 'advanced_features') or order_datum.params.advanced_features is None:
+    if (
+        not hasattr(order_datum.params, "advanced_features")
+        or order_datum.params.advanced_features is None
+    ):
         return False
-    
+
     # For this example, we'll use a simple price check
     # In practice, you'd want more sophisticated price discovery
     try:
         advanced_features = order_datum.params.advanced_features
         if advanced_features.stop_loss_price_num > 0 and market_price is not None:
-            stop_loss_price = advanced_features.stop_loss_price_num / advanced_features.stop_loss_price_den
+            stop_loss_price = (
+                advanced_features.stop_loss_price_num
+                / advanced_features.stop_loss_price_den
+            )
             return market_price <= stop_loss_price
     except:
         pass
@@ -41,9 +47,12 @@ def should_trigger_stop_loss(order_datum, market_price: float) -> bool:
 
 def meets_minimum_fill(order_datum, fill_amount: int) -> bool:
     """Check if the fill amount meets the minimum fill requirement."""
-    if not hasattr(order_datum.params, 'advanced_features') or order_datum.params.advanced_features is None:
+    if (
+        not hasattr(order_datum.params, "advanced_features")
+        or order_datum.params.advanced_features is None
+    ):
         return True
-    
+
     try:
         advanced_features = order_datum.params.advanced_features
         return fill_amount >= advanced_features.min_fill_amount
@@ -51,29 +60,34 @@ def meets_minimum_fill(order_datum, fill_amount: int) -> bool:
         return True
 
 
-def get_appropriate_redeemer(order_datum, fill_amount: int, market_price: Optional[float], 
-                           order_input_index: int, order_output_index: int):
+def get_appropriate_redeemer(
+    order_datum,
+    fill_amount: int,
+    market_price: Optional[float],
+    order_input_index: int,
+    order_output_index: int,
+):
     """Determine the appropriate redeemer type based on order characteristics."""
     # Check if this should be a stop-loss match
     if should_trigger_stop_loss(order_datum, market_price):
         price_num = int(market_price * 10000) if market_price else 10000
         price_den = 10000
-        return opshin_orderbook_v3.StopLossMatch(
+        return orderbook.StopLossMatch(
             input_index=order_input_index,
             output_index=order_output_index,
             filled_amount=fill_amount,
             trigger_price_num=price_num,
             trigger_price_den=price_den,
         )
-    
+
     # Check if this is a full match or partial match
     if fill_amount >= order_datum.buy_amount:
-        return opshin_orderbook_v3.FullMatch(
+        return orderbook.FullMatch(
             input_index=order_input_index,
             output_index=order_output_index,
         )
     else:
-        return opshin_orderbook_v3.PartialMatch(
+        return orderbook.PartialMatch(
             input_index=order_input_index,
             output_index=order_output_index,
             filled_amount=fill_amount,
@@ -93,20 +107,17 @@ def main(
         name, network=network
     )
     orderbook_v3_script, _, orderbook_v3_address = get_contract(
-        "opshin_orderbook_v3", True, context
+        "orderbook", False, context
     )
     free_minting_contract_script, free_minting_contract_hash, _ = get_contract(
-        "free_mint", True, context
-    )
-    (license_check_script, _, license_check_address) = get_contract(
-        "license_check", True, context
+        "free_mint", False, context
     )
 
     # Find an order wanting to buy free_mint tokens
     found_orders = []
     for utxo in context.utxos(orderbook_v3_address):
         try:
-            order_datum = opshin_orderbook_v3.Order.from_cbor(utxo.output.datum.cbor)
+            order_datum = orderbook.Order.from_cbor(utxo.output.datum.cbor)
         except Exception as e:
             continue
         if order_datum.params.buy.policy_id != free_minting_contract_hash.payload:
@@ -116,23 +127,7 @@ def main(
         print("No orders found")
         return
 
-    # Find a valid license
-    valid_license_utxo = None
     payment_utxos = context.utxos(payment_address)
-    for utxo in payment_utxos:
-        if utxo.output.amount.multi_asset.get(free_minting_contract_hash) is None:
-            continue
-        license_name = list(
-            utxo.output.amount.multi_asset[free_minting_contract_hash].keys()
-        )[0]
-        license_expiry = int.from_bytes(license_name.payload, "big")
-        if license_expiry < datetime.datetime.now().timestamp() * 1000:
-            continue
-        valid_license_utxo = utxo
-        break
-    if valid_license_utxo is None:
-        print("No valid licenses found")
-        return
 
     for amount_filled in range(min(len(found_orders), max_amount), 0, -1):
         found_orders_filtered = found_orders[:amount_filled]
@@ -140,7 +135,6 @@ def main(
         all_inputs_sorted = sorted_utxos(
             payment_utxos + [u[0] for u in found_orders_filtered]
         )
-        license_input_index = all_inputs_sorted.index(valid_license_utxo)
 
         # Build the transaction
         builder = TransactionBuilder(context)
@@ -152,46 +146,37 @@ def main(
         for u in payment_utxos:
             builder.add_input(u)
         builder.mint = pycardano.MultiAsset()
-        # add withdrawal which checks the license presence
-        builder.add_withdrawal_script(
-            license_check_script,
-            pycardano.Redeemer(license_input_index),
-        )
-        builder.withdrawals = pycardano.Withdrawals(
-            {
-                bytes(
-                    pycardano.Address(
-                        staking_part=license_check_address.payment_part, network=network
-                    )
-                ): 0
-            }
-        )
 
         for i, (order_utxo, order_datum) in enumerate(found_orders_filtered):
             order_input_index = all_inputs_sorted.index(order_utxo)
             order_output_index = i
-            
+
             # Calculate fill amount (for now, assume full fill)
             fill_amount = order_datum.buy_amount
-            
+
             # Check if the fill meets minimum requirements
-            if enable_advanced_matching and not meets_minimum_fill(order_datum, fill_amount):
+            if enable_advanced_matching and not meets_minimum_fill(
+                order_datum, fill_amount
+            ):
                 print(f"Order {i} does not meet minimum fill requirement, skipping")
                 continue
-            
+
             # Get the appropriate redeemer based on order type
             if enable_advanced_matching:
                 redeemer_data = get_appropriate_redeemer(
-                    order_datum, fill_amount, current_market_price, 
-                    order_input_index, order_output_index
+                    order_datum,
+                    fill_amount,
+                    current_market_price,
+                    order_input_index,
+                    order_output_index,
                 )
             else:
                 # Default to FullMatch for backward compatibility
-                redeemer_data = opshin_orderbook_v3.FullMatch(
+                redeemer_data = orderbook.FullMatch(
                     input_index=order_input_index,
                     output_index=order_output_index,
                 )
-            
+
             fill_order_redeemer = pycardano.Redeemer(redeemer_data)
 
             owner_address = from_address(order_datum.params.owner_address)

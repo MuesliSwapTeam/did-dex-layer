@@ -19,7 +19,7 @@ network = Network.MAINNET if os.getenv("NETWORK") == "MAINNET" else Network.TEST
 
 # Load chain context
 try:
-    #context = OgmiosChainContext(ogmios_url, network=network, kupo_url=kupo_url)
+    # context = OgmiosChainContext(ogmios_url, network=network, kupo_url=kupo_url)
 
     context = BlockFrostChainContext(
         "preprodjgdbXRrz6gH0hTST2Bx2C5bRqNKFq9ub", base_url=ApiUrls.preprod.value

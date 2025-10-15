@@ -63,7 +63,9 @@ def main(
     builder.mint = mint
 
     # Sign the transaction
-    payment_vkey, payment_skey, payment_address = get_signing_info(name, network=Network.TESTNET)
+    payment_vkey, payment_skey, payment_address = get_signing_info(
+        name, network=Network.TESTNET
+    )
     signed_tx = builder.build_and_sign(
         signing_keys=[payment_skey],
         change_address=payment_address,

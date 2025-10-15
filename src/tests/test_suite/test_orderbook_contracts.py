@@ -9,7 +9,9 @@ import os
 import sys
 
 # Add project root and src to path
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+project_root = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
 src_path = os.path.join(project_root, "src")
 sys.path.insert(0, src_path)
 
@@ -24,6 +26,7 @@ except ImportError as e:
     print(f"Python path: {sys.path[:3]}")
     # Mock orderbook if import fails
     import unittest.mock
+
     orderbook = unittest.mock.Mock()
     # Add required mock attributes
     orderbook.Address = unittest.mock.Mock
@@ -42,7 +45,7 @@ except ImportError as e:
     orderbook.UpperBoundPOSIXTime = unittest.mock.Mock
     orderbook.PosInfPOSIXTime = unittest.mock.Mock
     orderbook.TxId = unittest.mock.Mock
-    orderbook.DID_NFT_POLICY_ID = b'mock_policy_id'
+    orderbook.DID_NFT_POLICY_ID = b"mock_policy_id"
     orderbook.Value = dict
     orderbook.Token = unittest.mock.Mock
     orderbook.OrderParams = unittest.mock.Mock
@@ -62,6 +65,7 @@ except ImportError as e:
 
 # --------- Helpers ---------
 
+
 def mk_address(owner_pkh: bytes) -> orderbook.Address:
     return orderbook.Address(
         orderbook.PubKeyCredential(orderbook.PubKeyHash(owner_pkh)),
@@ -69,7 +73,9 @@ def mk_address(owner_pkh: bytes) -> orderbook.Address:
     )
 
 
-def mk_tx_out(address: orderbook.Address, value: orderbook.Value, datum=None) -> orderbook.TxOut:
+def mk_tx_out(
+    address: orderbook.Address, value: orderbook.Value, datum=None
+) -> orderbook.TxOut:
     if datum is None:
         output_datum = orderbook.NoOutputDatum()
     else:
@@ -88,8 +94,12 @@ def mk_empty_tx_info(inputs, outputs, signatories) -> orderbook.TxInfo:
         [],  # certs
         {},  # withdrawals
         orderbook.POSIXTimeRange(
-            orderbook.LowerBoundPOSIXTime(orderbook.NegInfPOSIXTime(), orderbook.FalseData()),
-            orderbook.UpperBoundPOSIXTime(orderbook.PosInfPOSIXTime(), orderbook.FalseData()),
+            orderbook.LowerBoundPOSIXTime(
+                orderbook.NegInfPOSIXTime(), orderbook.FalseData()
+            ),
+            orderbook.UpperBoundPOSIXTime(
+                orderbook.PosInfPOSIXTime(), orderbook.FalseData()
+            ),
         ),
         signatories,  # signatories
         {},  # datums (unused if datum is inline)
@@ -112,6 +122,7 @@ def with_did(value: orderbook.Value) -> orderbook.Value:
 
 
 # --------- Fixtures ---------
+
 
 @pytest.fixture()
 def owner_pkh() -> bytes:
@@ -144,6 +155,7 @@ def order_params(owner_pkh, tokens) -> orderbook.OrderParams:
 
 # --------- Tests: Cancel ---------
 
+
 def test_cancel_succeeds_with_owner_signature_and_did(order_params):
     order = orderbook.Order(order_params, 100, orderbook.Nothing(), 1_000_000)
 
@@ -159,7 +171,12 @@ def test_cancel_succeeds_with_owner_signature_and_did(order_params):
     context = orderbook.ScriptContext(tx_info, orderbook.Spending(tx_in.out_ref))
 
     # Should not raise
-    orderbook.validator(orderbook.StakingHash(orderbook.PubKeyCredential(order_params.owner_pkh)), order, orderbook.CancelOrder(0), context)
+    orderbook.validator(
+        orderbook.StakingHash(orderbook.PubKeyCredential(order_params.owner_pkh)),
+        order,
+        orderbook.CancelOrder(0),
+        context,
+    )
 
 
 def test_cancel_fails_without_owner_signature(order_params):
@@ -175,10 +192,16 @@ def test_cancel_fails_without_owner_signature(order_params):
     context = orderbook.ScriptContext(tx_info, orderbook.Spending(tx_in.out_ref))
 
     with pytest.raises(AssertionError):
-        orderbook.validator(orderbook.StakingHash(orderbook.PubKeyCredential(order_params.owner_pkh)), order, orderbook.CancelOrder(0), context)
+        orderbook.validator(
+            orderbook.StakingHash(orderbook.PubKeyCredential(order_params.owner_pkh)),
+            order,
+            orderbook.CancelOrder(0),
+            context,
+        )
 
 
 # --------- Tests: FullMatch ---------
+
 
 def test_full_match_sets_output_datum_and_min_value(order_params, tokens):
     order = orderbook.Order(order_params, 100, orderbook.Nothing(), 500_000)
@@ -202,10 +225,16 @@ def test_full_match_sets_output_datum_and_min_value(order_params, tokens):
     context = orderbook.ScriptContext(tx_info, orderbook.Spending(tx_in.out_ref))
 
     # Should not raise
-    orderbook.validator(orderbook.StakingHash(orderbook.PubKeyCredential(order_params.owner_pkh)), order, orderbook.FullMatch(0, 0), context)
+    orderbook.validator(
+        orderbook.StakingHash(orderbook.PubKeyCredential(order_params.owner_pkh)),
+        order,
+        orderbook.FullMatch(0, 0),
+        context,
+    )
 
 
 # --------- Tests: PartialMatch ---------
+
 
 def test_partial_match_updates_datum_and_value(order_params, tokens):
     # Start with a 2:1 sell:buy ratio in the input value
@@ -225,7 +254,9 @@ def test_partial_match_updates_datum_and_value(order_params, tokens):
     # Fill 40 of the 100 buy amount
     filled = 40
     # Scaled batch reward = floor(40/100 * 1000) = 400
-    scaled_batch_reward = orderbook.floor_scale_fraction(filled, order.buy_amount, order.batch_reward)
+    scaled_batch_reward = orderbook.floor_scale_fraction(
+        filled, order.buy_amount, order.batch_reward
+    )
     remaining_reward = order.batch_reward - scaled_batch_reward
     # just_sold = floor(40/100 * 200) = 80
     just_sold = orderbook.floor_scale_fraction(filled, order.buy_amount, 200)
@@ -237,11 +268,18 @@ def test_partial_match_updates_datum_and_value(order_params, tokens):
         b"": {b"": order_params.min_utxo - scaled_batch_reward},
     }
 
-    expected_datum = orderbook.Order(order_params, order.buy_amount - filled, tx_in.out_ref, remaining_reward)
+    expected_datum = orderbook.Order(
+        order_params, order.buy_amount - filled, tx_in.out_ref, remaining_reward
+    )
     tx_out = mk_tx_out(addr, out_value, datum=expected_datum)
 
     tx_info = mk_empty_tx_info([tx_in], [tx_out], [order_params.owner_pkh])
     context = orderbook.ScriptContext(tx_info, orderbook.Spending(tx_in.out_ref))
 
     # Should not raise
-    orderbook.validator(orderbook.StakingHash(orderbook.PubKeyCredential(order_params.owner_pkh)), order, orderbook.PartialMatch(0, 0, filled), context)
+    orderbook.validator(
+        orderbook.StakingHash(orderbook.PubKeyCredential(order_params.owner_pkh)),
+        order,
+        orderbook.PartialMatch(0, 0, filled),
+        context,
+    )

@@ -19,7 +19,7 @@ from orderbook.off_chain.utils.network import context, show_tx
 from orderbook.off_chain.utils.to_script_context import to_address
 
 free_minting_contract_script, free_minting_contract_hash, _ = get_contract(
-    "free_mint", False
+    "free_mint", False, context
 )
 
 
@@ -75,7 +75,7 @@ free_minting_contract_script, free_minting_contract_hash, _ = get_contract(
     help="Require counterparty to be an accredited investor",
 )
 @click.option(
-    "--require-business-entity", 
+    "--require-business-entity",
     is_flag=True,
     help="Require counterparty to be a business entity",
 )
@@ -103,9 +103,8 @@ def main(
         name, network=network
     )
     orderbook_v3_script, _, orderbook_v3_address = get_contract(
-        "orderbook", False
+        "orderbook", False, context
     )
-
 
     # Build the transaction
     builder = TransactionBuilder(context)
@@ -138,73 +137,84 @@ def main(
         # Create the vesting datum
         min_utxo = 2300000
         return_reward = 650000
-        
+
         # Create advanced features if any are specified
         advanced_features = orderbook.Nothing()
-        if stop_loss_price or min_fill_amount > 0 or twap_interval > 0 or max_slippage > 0:
+        if (
+            stop_loss_price
+            or min_fill_amount > 0
+            or twap_interval > 0
+            or max_slippage > 0
+        ):
             # Convert stop-loss price to ratio (using 10000 as denominator for precision)
             stop_loss_num = int(stop_loss_price * 10000) if stop_loss_price else 0
             stop_loss_den = 10000 if stop_loss_price else 1
-            
+
             # Convert TWAP interval from minutes to milliseconds
             twap_interval_ms = twap_interval * 60 * 1000
-            
+
             # Convert slippage percentage to basis points
             slippage_bps = int(max_slippage * 100)
-            
+
             advanced_features = orderbook.AdvancedOrderFeatures(
                 stop_loss_num,
                 stop_loss_den,
                 min_fill_amount,
                 twap_interval_ms,
-                slippage_bps
+                slippage_bps,
             )
-        
+
         # Create DID requirements if any are specified
         did_requirements = orderbook.Nothing()
-        if require_accredited_investor or require_business_entity or allow_non_did_trading:
+        if (
+            require_accredited_investor
+            or require_business_entity
+            or allow_non_did_trading
+        ):
             accepted_did_types = []
-            
+
             if require_accredited_investor:
                 accredited_did_type = orderbook.DIDType(
                     orderbook.ACCREDITED_INVESTOR_POLICY_ID,
                     b"",  # Any token name
-                    2     # Accredited investor level
+                    2,  # Accredited investor level
                 )
                 accepted_did_types.append(accredited_did_type)
-            
+
             if require_business_entity:
                 business_did_type = orderbook.DIDType(
                     orderbook.BUSINESS_ENTITY_POLICY_ID,
                     b"",  # Any token name
-                    3     # Business entity level
+                    3,  # Business entity level
                 )
                 accepted_did_types.append(business_did_type)
-            
+
             # If no specific types required but allow_non_did_trading is false, require basic DID
-            if not require_accredited_investor and not require_business_entity and not allow_non_did_trading:
+            if (
+                not require_accredited_investor
+                and not require_business_entity
+                and not allow_non_did_trading
+            ):
                 basic_did_type = orderbook.DIDType(
                     orderbook.DID_NFT_POLICY_ID,
                     b"",  # Any token name
-                    1     # Basic verified level
+                    1,  # Basic verified level
                 )
                 accepted_did_types.append(basic_did_type)
-            
+
             did_requirements = orderbook.DIDRequirements(
                 accepted_did_types,
                 1,  # Require counterparty DID
-                1 if allow_non_did_trading else 0  # Allow non-DID trading
+                1 if allow_non_did_trading else 0,  # Allow non-DID trading
             )
-        
+
         params = orderbook.OrderParams(
             beneficiary_pkh.payload,
             to_address(beneficiary_address),
             orderbook.Token(buy_token[0].payload, buy_token[1].payload),
             orderbook.Token(sell_token[0].payload, sell_token[1].payload),
             1,
-            orderbook.FinitePOSIXTime(
-                int(datetime.datetime.now().timestamp() * 1000)
-            ),
+            orderbook.FinitePOSIXTime(int(datetime.datetime.now().timestamp() * 1000)),
             return_reward,
             min_utxo,
             advanced_features,

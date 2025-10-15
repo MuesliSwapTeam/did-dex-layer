@@ -4,6 +4,7 @@ This repository contains the documentation and code for the implementation of th
 
 ## Table of Contents
 - [Overview](#overview)
+- [Installation](#installation)
 - [System Architecture](#system-architecture)
 - [Repository Structure](#repository-structure)
 - [User Guide](#user-guide)
@@ -23,6 +24,59 @@ The Cardano DEX Protocol with DIDs Layer implements a decentralized exchange tha
 - **Multi-DID Provider Support**: Compatibility with various DID verification levels
 - **Compliance Framework**: DID requirements for counterparties in trading
 - **Atomic Order Modification**: Real-time order updates without cancellation
+
+## Installation
+
+The project includes a pre-built PyCardano wheel in the `vendor/` directory, eliminating the need for external repository access.
+
+### Quick Start (Recommended)
+
+```bash
+# Clone the repository
+git clone <your-repo-url> did-dex-layer
+cd did-dex-layer
+
+# Run the installation script
+./install.sh
+```
+
+The script will:
+1. Check if you're in a virtual environment (creates one if needed)
+2. Install the vendored PyCardano wheel
+3. Install all other dependencies
+4. Verify the installation
+
+### Manual Installation
+
+If you prefer to install manually:
+
+```bash
+# 1. Create and activate a virtual environment
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# 2. Install PyCardano from the vendored wheel
+pip install vendor/pycardano-0.9.0-py3-none-any.whl
+
+# 3. Install other dependencies
+pip install -r requirements.txt
+
+# 4. Verify installation
+python -c "import pycardano; print(f'PyCardano {pycardano.__version__}')"
+python -c "import opshin; print('OpShin OK')"
+```
+
+### Verification
+
+After installation, verify everything works:
+
+```bash
+# Test imports
+python -c "import pycardano, opshin, flask, pytest; print('All imports successful!')"
+
+# Run tests
+pytest src/tests/
+```
 
 ## System Architecture
 
@@ -66,45 +120,36 @@ The directory `src/orderbook` contains the source code for on-chain/off-chain in
 
 ### Prerequisites
 
-Before getting started, ensure you have the following installed and configured:
+Before getting started, ensure you have completed the [Installation](#installation) steps above.
 
-#### Software Requirements
+#### Additional Requirements for Testing
 - **Python 3.9+**: Required for running the smart contracts and off-chain code
-- **Node.js 16+**: Required for the frontend components
-- **OpShin**: Smart contract compilation framework
+- **Node.js 16+**: Required for the frontend components (DID minting tool)
+- **OpShin**: Smart contract compilation framework (installed via requirements.txt)
 
 #### Network Requirements
 - **Ogmios Endpoint**: Access to a Cardano node via Ogmios
 - **Preprod Testnet Access**: For testing and demonstration
 
-#### Environment Setup
+#### Configure Environment Variables
 
-1. **Clone the Repository**
-   ```bash
-   git clone https://github.com/MuesliSwapTeam/did-dex-layer.git
-   cd did-dex-layer
-   ```
+Set up your Cardano node connection:
 
-2. **Install Dependencies**
-   ```bash
-   # Install Python dependencies
-   pip install -r requirements.txt
-   
-   # Install test dependencies
-   pip install -r src/tests/requirements.txt
-   
-   # Install frontend dependencies (if using the DID minting tool)
-   cd src/auth_nft_minting_tool/frontend
-   npm install
-   cd ../../..
-   ```
+```bash
+export OGMIOS_API_HOST="localhost"
+export OGMIOS_API_PROTOCOL="ws"
+export OGMIOS_API_PORT="1337"
+```
 
-3. **Configure Environment Variables**
-   ```bash
-   export OGMIOS_API_HOST="localhost"
-   export OGMIOS_API_PROTOCOL="ws"
-   export OGMIOS_API_PORT="1337"
-   ```
+#### Optional: Frontend Setup
+
+If using the DID minting tool frontend:
+
+```bash
+cd src/auth_nft_minting_tool/frontend
+npm install
+cd ../../..
+```
 
 ### Initial Setup
 
@@ -116,26 +161,37 @@ You can use the [testnet faucet](https://docs.cardano.org/cardano-testnet/tools/
 
 ```bash
 cd src/orderbook
-python3 create_key_pair.py trader1
-python3 -m orderbook.create_key_pair trader2
+python3 create_keypair.py trader1
+python3 create_keypair.py trader2
 ```
 
 Fund these wallets using the [Cardano Preprod Testnet Faucet](https://docs.cardano.org/cardano-testnet/tools/faucet/). **Important**: Select the `preprod` network!
 
-#### 2. Compile Smart Contracts
+#### 2. Smart Contracts
 
-Build the orderbook smart contracts:
+The orderbook smart contracts are **pre-compiled** and included in the repository at `src/orderbook/on_chain/build/`.
+
+If you need to recompile the contracts:
 
 ```bash
-cd src/orderbook/on_chain
-opshin compile spending orderbook.py --recursion-limit 2000
+# Set Python path to include src directory
+export PYTHONPATH="$(pwd)/src"
+
+# Compile the orderbook contract
+opshin build src/orderbook/on_chain/orderbook.py --recursion-limit 2000 -o src/orderbook/on_chain/build/orderbook
+
+# Compile the free mint contract (for test tokens)
+opshin build minting src/orderbook/on_chain/free_mint.py -o src/orderbook/on_chain/build/free_mint
+
+# Compile the DID authentication NFT minting contract
+opshin build minting src/auth_nft_minting_tool/onchain/atala_did_nft.py -o src/auth_nft_minting_tool/onchain/build/atala_did_nft
 ```
 
-This generates the necessary contract files in the `build/` directory.
+**Note:** The pre-compiled contracts in `build/` directories are ready to use. Recompilation is only needed if you modify the contract code.
 
 #### 3. Mint Test Tokens
 
-Create test tokens for trading:
+Create test tokens for trading. Please wait for the blockchain to confirm transaction 1 before calling the code for trader1. 
 
 ```bash
 cd src/orderbook
@@ -161,7 +217,7 @@ Cancel an order (requires DID NFT from the test script):
 python -m orderbook.off_chain.cancel_order trader1 [ORDER_ID]
 ```
 
-This will create a new trade with `trader1` as owner`. You can now only cancel the order when presenting the DID NFT of trader 1. To do this you can mint an authentication NFT through a DID demo and then send it to the wallets of the respective traders. To then cancel the order you can call the relvant cancelation code which constructs the correct transaction and presents the DID NFT during cancelation.
+This will create a new trade with `trader1` as owner`. You can now only cancel the order when presenting the DID NFT of trader 1. 
 
 ## Advanced Features
 
@@ -198,15 +254,7 @@ python -m orderbook.off_chain.place_order trader1 trader2 0 --stop-loss-price 50
 Ensure orders are only filled above a minimum threshold:
 
 ```bash
-python -m orderbook.off_chain.place_order trader1 trader2 0 --minimum-fill 100
-```
-
-#### TWAP (Time-Weighted Average Price) Execution
-
-Execute large orders gradually over time:
-
-```bash
-python -m orderbook.off_chain.place_order trader1 trader2 0 --twap-duration 3600
+python -m orderbook.off_chain.place_order trader1 trader2 0 --minimum-fill-amount 100
 ```
 
 ### Order Management
@@ -225,6 +273,18 @@ python -m orderbook.off_chain.modify_order trader1 --new-price 75
 # Update stop-loss trigger
 python -m orderbook.off_chain.modify_order trader1 --new-stop-loss 45
 ```
+
+**Note:** Due to the large size of the orderbook smart contract (33KB), atomic order modification may exceed Cardano's 16KB transaction size limit. If you encounter "Transaction size exceeds the max limit" errors, use separate cancel and place order commands instead:
+
+```bash
+# Cancel the existing order
+python -m orderbook.off_chain.cancel_order trader1
+
+# Place a new order with updated parameters
+python -m orderbook.off_chain.place_order trader1 trader1 0 --buy-amount 150
+```
+
+Future improvements will use reference scripts to overcome this limitation.
 
 #### Bulk Order Operations
 
@@ -317,14 +377,15 @@ We provide the following references to `preprod` testnet transactions showing re
   ```bash
   pip install opshin
   ```
-- Increase recursion limit if needed:
+- Ensure PYTHONPATH is set correctly:
   ```bash
-  opshin compile spending orderbook.py --recursion-limit 3000
+  export PYTHONPATH="$(pwd)/src"
   ```
-- Clear build cache and recompile:
+- The recursion limit of 2000 is sufficient for the orderbook contract
+- Clear build cache and recompile if issues persist:
   ```bash
-  rm -rf build/
-  opshin compile spending orderbook.py
+  rm -rf src/orderbook/on_chain/build/orderbook/
+  opshin compile spending src/orderbook/on_chain/orderbook.py --recursion-limit 2000 -o src/orderbook/on_chain/build/orderbook
   ```
 
 #### DID Authentication Issues
