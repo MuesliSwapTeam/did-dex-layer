@@ -13,7 +13,20 @@ echo ""
 
 # Check Python version
 PYTHON_VERSION=$(python3 --version 2>&1 | awk '{print $2}')
+PYTHON_MAJOR=$(echo "$PYTHON_VERSION" | cut -d. -f1)
+PYTHON_MINOR=$(echo "$PYTHON_VERSION" | cut -d. -f2)
 echo "Detected Python version: $PYTHON_VERSION"
+
+# Check if Python version is compatible (3.9-3.11)
+if [ "$PYTHON_MAJOR" -lt 3 ] || ([ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 9 ]); then
+    echo "❌ ERROR: Python 3.9 or higher is required (found $PYTHON_VERSION)"
+    exit 1
+elif [ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -ge 12 ]; then
+    echo "⚠️  WARNING: Python 3.12+ detected. This project requires Python 3.9-3.11"
+    echo "   OpShin versions compatible with pycardano 0.9.0 require Python <3.12"
+    echo "   Please use Python 3.9, 3.10, or 3.11"
+    exit 1
+fi
 
 # Check if we're in a virtual environment
 if [ -z "$VIRTUAL_ENV" ]; then
@@ -77,9 +90,10 @@ echo "✓ Dependencies installed"
 # Step 3: Verify installation
 echo ""
 echo "Step 3: Verifying installation..."
-python3 -c "import pycardano; print(f'✓ PyCardano version: {pycardano.__version__}')" 2>/dev/null || echo "⚠️  PyCardano import failed"
+python3 -c "import pycardano; version = getattr(pycardano, '__version__', '0.9.0 (custom)'); print(f'✓ PyCardano version: {version}')" 2>/dev/null || echo "⚠️  PyCardano import failed"
 python3 -c "import opshin; print('✓ OpShin import successful')" 2>/dev/null || echo "⚠️  OpShin import failed"
 python3 -c "import flask; print('✓ Flask import successful')" 2>/dev/null || echo "⚠️  Flask import failed"
+python3 -c "import fire; print('✓ Fire import successful')" 2>/dev/null || echo "⚠️  Fire import failed"
 
 echo ""
 echo "==================================="

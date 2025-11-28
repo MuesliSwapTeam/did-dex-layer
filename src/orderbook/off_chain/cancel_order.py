@@ -2,7 +2,6 @@ import datetime
 from typing import Optional
 
 import click
-import fire
 import pycardano
 from pycardano import (
     TransactionBuilder,

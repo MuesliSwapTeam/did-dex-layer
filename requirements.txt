@@ -16,7 +16,9 @@
 # ============================================================================
 
 # OpShin - Pythonic smart contract language for Cardano
-opshin>=0.16.0
+# Pinned to version compatible with pycardano 0.9.0
+# NOTE: Requires Python 3.9-3.11 (Python 3.12+ incompatible with these opshin versions)
+opshin>=0.16.0,<0.20.0
 
 # Web Framework Dependencies
 flask
@@ -51,4 +53,5 @@ psutil>=5.9.0
 
 # CLI Tools
 click>=8.1.3
+fire
 

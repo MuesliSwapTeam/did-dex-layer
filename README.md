@@ -52,6 +52,7 @@ If you prefer to install manually:
 
 ```bash
 # 1. Create and activate a virtual environment
+# Note: Requires Python 3.9-3.11 (Python 3.12+ is incompatible with opshin versions for pycardano 0.9.0)
 python3 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
@@ -62,8 +63,9 @@ pip install vendor/pycardano-0.9.0-py3-none-any.whl
 pip install -r requirements.txt
 
 # 4. Verify installation
-python -c "import pycardano; print(f'PyCardano {pycardano.__version__}')"
+python -c "import pycardano; version = getattr(pycardano, '__version__', '0.9.0 (custom)'); print(f'PyCardano {version}')"
 python -c "import opshin; print('OpShin OK')"
+python -c "import fire; print('Fire OK')"
 ```
 
 ### Verification
@@ -95,7 +97,7 @@ and implementation strategy as promised for Milestone 1 of the project.
 
 ### Atala PRISM Authenticanion Framework & On-chain Orderbook Smart Contracts  (Milestone 2)
 
-The directory contains two parts. The first part is the connection to the DID plafrom that allows for the minting of DID NFTs. The second part is a modified orderbook DEX contract that asks a user to present a DID NFT when withdrawing funds from the swap smart contract (i.e. after an order is matched or the user cancels his order). This ensures that only users can swap/withdraw funds that have a valid DID authentication. The first part is based on the authentication tool developed ion [Atala Prism Voting Project](https://projectcatalyst.io/funds/10/f10-atala-prism-launch-ecosystem/dao-governance-x-atala-prism-by-muesliswap) and modified for use in this codebase. The second part is a new orderbook contract with added DID layer specifically developed for this project. 
+The directory contains two parts. The first part is the connection to the DID plafrom that allows for the minting of DID NFTs. The second part is a modified orderbook DEX contract that asks a user to present a DID NFT when withdrawing funds from the swap smart contract (i.e. after an order is matched or the user cancels his order). This ensures that only users can swap/withdraw funds that have a valid DID authentication. The first part is based on the authentication tool developed ion [Atala Prism Voting Project](https://projectcatalyst.io/funds/10/f10-atala-prism-launch-ecosystem/dao-governance-x-atala-prism-by-muesliswap) and modified for use in this codebase. The second part is a new orderbook contract with added DID layer specifically developed for this project. As the Atala Prism project has been retired by IOHK we added an additional script to create blackbox NFTs that can be used. This script can be found in `src/did_example_mint`.
 
 ### Protocol Explanation
 This section provides a brief explanation of how the DID (Decentralized Identifier) layer functions. Anyone can place a trade by locking funds with the correct datum at the smart contract address. However, to withdraw or cancel an open position, a valid DID NFT (Non-Fungible Token) must be presented. For example, when a user initiates a transaction and later decides to cancel it, they must present the DID NFT during the cancellation process. The smart contract verifies that the policy ID of the DID NFT matches the policy ID of the DID minting tool. Since a "centralized entity" is responsible for verifying and issuing the DID, this validation can be conducted reliably. When a transaction is matched with another transaction, the funds remain in the contract until the user withdraws them. To do so, the user must use the cancel redeemer, which again requires presenting a valid DID NFT. The key benefit of this approach is that while anyone can participate in the protocol, only users who have verified their identity through the DID system will be able to withdraw funds. This ensures a layer of security and accountability within the protocol.
@@ -123,7 +125,7 @@ The directory `src/orderbook` contains the source code for on-chain/off-chain in
 Before getting started, ensure you have completed the [Installation](#installation) steps above.
 
 #### Additional Requirements for Testing
-- **Python 3.9+**: Required for running the smart contracts and off-chain code
+- **Python 3.9-3.11**: Required for running the smart contracts and off-chain code (Python 3.12+ is not compatible with opshin versions that work with pycardano 0.9.0)
 - **Node.js 16+**: Required for the frontend components (DID minting tool)
 - **OpShin**: Smart contract compilation framework (installed via requirements.txt)
 
@@ -178,7 +180,7 @@ If you need to recompile the contracts:
 export PYTHONPATH="$(pwd)/src"
 
 # Compile the orderbook contract
-opshin build src/orderbook/on_chain/orderbook.py --recursion-limit 2000 -o src/orderbook/on_chain/build/orderbook
+opshin build spending src/orderbook/on_chain/orderbook.py --recursion-limit 3000 -o src/orderbook/on_chain/build/orderbook
 
 # Compile the free mint contract (for test tokens)
 opshin build minting src/orderbook/on_chain/free_mint.py -o src/orderbook/on_chain/build/free_mint
@@ -214,7 +216,7 @@ python -m orderbook.off_chain.place_order trader1 trader1 0
 Cancel an order (requires DID NFT from the test script):
 
 ```bash
-python -m orderbook.off_chain.cancel_order trader1 [ORDER_ID]
+python -m orderbook.off_chain.cancel_order trader1
 ```
 
 This will create a new trade with `trader1` as owner`. You can now only cancel the order when presenting the DID NFT of trader 1. 
@@ -288,10 +290,14 @@ Future improvements will use reference scripts to overcome this limitation.
 
 #### Bulk Order Operations
 
-Execute multiple operations in a single transaction:
+Execute multiple payments in a single transaction:
 
 ```bash
-python -m orderbook.off_chain.bulk_payments trader1 --orders order1,order2,order3
+# Pay ADA to multiple recipients
+python -m orderbook.off_chain.bulk_payments trader1 --recipients addr1... --recipients addr2... --amounts 1000000 --amounts 2000000
+
+# Or use a JSON file for payments
+python -m orderbook.off_chain.bulk_payments trader1 --payments-file payments.json
 ```
 
 ## Testing
@@ -381,11 +387,11 @@ We provide the following references to `preprod` testnet transactions showing re
   ```bash
   export PYTHONPATH="$(pwd)/src"
   ```
-- The recursion limit of 2000 is sufficient for the orderbook contract
+- The recursion limit of 3000 is recommended for the orderbook contract
 - Clear build cache and recompile if issues persist:
   ```bash
   rm -rf src/orderbook/on_chain/build/orderbook/
-  opshin compile spending src/orderbook/on_chain/orderbook.py --recursion-limit 2000 -o src/orderbook/on_chain/build/orderbook
+  opshin build spending src/orderbook/on_chain/orderbook.py --recursion-limit 3000 -o src/orderbook/on_chain/build/orderbook
   ```
 
 #### DID Authentication Issues
