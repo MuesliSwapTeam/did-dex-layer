@@ -94,6 +94,7 @@ python3 -c "import pycardano; version = getattr(pycardano, '__version__', '0.9.0
 python3 -c "import opshin; print('✓ OpShin import successful')" 2>/dev/null || echo "⚠️  OpShin import failed"
 python3 -c "import flask; print('✓ Flask import successful')" 2>/dev/null || echo "⚠️  Flask import failed"
 python3 -c "import fire; print('✓ Fire import successful')" 2>/dev/null || echo "⚠️  Fire import failed"
+python3 -c "import ogmios; print('✓ Ogmios import successful')" 2>/dev/null || echo "⚠️  Ogmios import failed"
 
 echo ""
 echo "==================================="

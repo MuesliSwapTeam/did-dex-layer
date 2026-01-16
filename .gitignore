@@ -11,6 +11,9 @@ keys/
 src/.coverage
 src/on_chain/build
 
+# extra venvs
+compile_venv/
+
 # Python virtual environment
 venv/
 env/

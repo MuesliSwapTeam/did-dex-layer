@@ -16,7 +16,7 @@ from pycardano import (
 from orderbook.off_chain.util import sorted_utxos
 from orderbook.on_chain import orderbook
 from orderbook.off_chain.utils.keys import get_signing_info, get_address, network
-from orderbook.off_chain.utils.contracts import get_contract
+from orderbook.off_chain.utils.contracts import get_contract, find_reference_utxo
 from orderbook.off_chain.utils.from_script_context import from_address
 from orderbook.off_chain.utils.network import context, show_tx
 from orderbook.off_chain.utils.to_script_context import to_address, to_tx_out_ref
@@ -30,8 +30,6 @@ def should_trigger_stop_loss(order_datum, market_price: float) -> bool:
     ):
         return False
 
-    # For this example, we'll use a simple price check
-    # In practice, you'd want more sophisticated price discovery
     try:
         advanced_features = order_datum.params.advanced_features
         if advanced_features.stop_loss_price_num > 0 and market_price is not None:
@@ -102,6 +100,7 @@ def main(
     steal_tokens: bool = False,
     enable_advanced_matching: bool = True,
     current_market_price: Optional[float] = None,
+    use_reference_script: bool = True,
 ):
     payment_vkey, payment_skey, payment_address = get_signing_info(
         name, network=network
@@ -112,6 +111,17 @@ def main(
     free_minting_contract_script, free_minting_contract_hash, _ = get_contract(
         "free_mint", False, context
     )
+
+    # Try to find reference script UTxO
+    ref_script_utxo = None
+    if use_reference_script:
+        ref_script_utxo = find_reference_utxo(
+            "orderbook", context, [payment_address]
+        )
+        if ref_script_utxo:
+            print(f"Using reference script: {ref_script_utxo.input.transaction_id}#{ref_script_utxo.input.index}")
+        else:
+            print("No reference script found, including script in transaction")
 
     # Find an order wanting to buy free_mint tokens
     found_orders = []
@@ -128,12 +138,18 @@ def main(
         return
 
     payment_utxos = context.utxos(payment_address)
+    
+    # Filter out reference script UTxO from payment inputs
+    payment_utxos_filtered = [
+        u for u in payment_utxos 
+        if not (ref_script_utxo and u.input == ref_script_utxo.input)
+    ]
 
     for amount_filled in range(min(len(found_orders), max_amount), 0, -1):
         found_orders_filtered = found_orders[:amount_filled]
 
         all_inputs_sorted = sorted_utxos(
-            payment_utxos + [u[0] for u in found_orders_filtered]
+            payment_utxos_filtered + [u[0] for u in found_orders_filtered]
         )
 
         # Build the transaction
@@ -143,7 +159,7 @@ def main(
                 metadata=Metadata({674: {"msg": ["MuesliSwap Fill Order"]}})
             )
         )
-        for u in payment_utxos:
+        for u in payment_utxos_filtered:
             builder.add_input(u)
         builder.mint = pycardano.MultiAsset()
 
@@ -180,12 +196,24 @@ def main(
             fill_order_redeemer = pycardano.Redeemer(redeemer_data)
 
             owner_address = from_address(order_datum.params.owner_address)
-            builder.add_script_input(
-                order_utxo,
-                orderbook_v3_script,
-                None,
-                fill_order_redeemer,
-            )
+            
+            # Add script input - with or without reference script
+            if ref_script_utxo:
+                # Pass reference UTxO as script parameter - pycardano uses it as reference script
+                builder.add_script_input(
+                    order_utxo,
+                    script=ref_script_utxo,  # UTxO containing the reference script
+                    datum=None,
+                    redeemer=fill_order_redeemer,
+                )
+            else:
+                builder.add_script_input(
+                    order_utxo,
+                    orderbook_v3_script,
+                    None,
+                    fill_order_redeemer,
+                )
+                
             _taken_reward = take_more_reward or order_datum.batch_reward
             sell_token = order_datum.params.sell
             sell_token = (
@@ -244,6 +272,7 @@ def main(
 
             # Submit the transaction
             context.submit_tx(signed_tx.to_cbor())
+            print(f"\nTransaction ID: {signed_tx.id}")
             show_tx(signed_tx)
             print(f"filled {amount_filled} orders")
             break

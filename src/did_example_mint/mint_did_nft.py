@@ -85,7 +85,8 @@ def main(
     
     # Generate DID identifier if not provided (use address hash)
     if did_identifier is None:
-        did_identifier = payment_address.encode().hex()
+        # Use the bech32 encoded address string as the DID identifier
+        did_identifier = payment_address.to_primitive()
     
     # Generate asset name if not provided (use hash of DID identifier)
     if asset_name is None:

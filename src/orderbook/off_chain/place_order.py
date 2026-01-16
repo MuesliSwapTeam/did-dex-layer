@@ -241,6 +241,10 @@ def main(
             )
         )
 
+    # Set a reasonable minimum fee to work around pycardano fee estimation bug
+    # The issue is that pycardano 0.9.0 doesn't properly account for datum size
+    builder.fee = 500_000  # 0.5 ADA should cover most transactions
+    
     # Sign the transaction
     signed_tx = builder.build_and_sign(
         signing_keys=[payment_skey],

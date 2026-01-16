@@ -203,20 +203,6 @@ def has_did_nft_in_inputs(
     return False
 
 
-def get_did_auth_level(did_token: Token) -> int:
-    """
-    Determine authentication level based on DID token policy and name
-    """
-    if did_token.policy_id == DID_NFT_POLICY_ID:
-        return 1  # Basic verified DID
-    elif did_token.policy_id == ACCREDITED_INVESTOR_POLICY_ID:
-        return 2  # Accredited investor
-    elif did_token.policy_id == BUSINESS_ENTITY_POLICY_ID:
-        return 3  # Institutional/Business entity
-    else:
-        return 0  # Unknown/Basic
-
-
 def check_did_compliance(
     user_address: Address, did_requirements: DIDRequirements, tx_info: TxInfo
 ) -> bool:
@@ -252,7 +238,7 @@ def check_out_datum(output: TxOut, input_ref: TxOutRef, tx_info: TxInfo) -> None
     TODO this leads to breaking transaction chaining which is unfortunate
     """
     out_datum: OutDatum = resolve_datum_unsafe(output, tx_info)
-    assert out_datum == input_ref, "Invalid txout referenced in output datum"
+    assert out_datum == input_ref, "1"
 
 
 def check_cancel(order: Order, tx_info: TxInfo, own_input: TxInInfo) -> None:
@@ -267,7 +253,7 @@ def check_cancel(order: Order, tx_info: TxInfo, own_input: TxInInfo) -> None:
     # check if owner cancels
     assert (
         order.params.owner_pkh in tx_info.signatories
-    ), "Order creator signature missing"
+    ), "2"
 
     # assert _nft_bucket is not None, "CANCEL NFT NOT PRESENT"
 
@@ -283,7 +269,7 @@ def check_full(
     new_out_datum = Order(order_params, 0, own_input.out_ref, 0)
 
     output_datum: Order = resolve_datum_unsafe(own_output, tx_info)
-    assert output_datum == new_out_datum, "Invalid output datum"
+    assert output_datum == new_out_datum, "3"
 
     # Check DID requirements if specified
     # Note: We check all non-owner inputs for DID compliance (
@@ -297,12 +283,12 @@ def check_full(
             if input_address != order_params.owner_address:
                 if check_did_compliance(input_address, did_requirements, tx_info):
                     has_compliant_counterparty = True
-        assert has_compliant_counterparty, "No counterparty meets DID requirements"
+        assert has_compliant_counterparty, "4"
 
     # make sure that the order creator gets at least what they ordered
     # 1) check that the output actually remains at the contract - this is to ensure the DID layer where the user has to cancel
     own_input_resolved = own_input.resolved
-    assert own_output.address == own_input_resolved.address, "Invalid output address"
+    assert own_output.address == own_input_resolved.address, "5"
 
     # 2) the value is at least the buy amount
     order_params = order.params
@@ -333,7 +319,7 @@ def check_partial(
     """
     # 1) check that the ratio is valid
     order_buy_amount = order.buy_amount
-    assert 0 < filled_amount < order_buy_amount, "Invalid filled amount"
+    assert 0 < filled_amount < order_buy_amount, "6"
 
     # 2) check that the output datum is set correctly
     new_buy_amount = order_buy_amount - filled_amount
@@ -348,11 +334,11 @@ def check_partial(
         order_params, new_buy_amount, own_input_info.out_ref, remaining_reward
     )
     output_datum: Order = resolve_datum_unsafe(own_output, tx_info)
-    assert output_datum == new_out_datum, "Invalid output datum"
+    assert output_datum == new_out_datum, "3"
 
     # 3) check that the output actually remains at the contract
     own_input = own_input_info.resolved
-    assert own_output.address == own_input.address, "Invalid output address"
+    assert own_output.address == own_input.address, "5"
 
     # 4) check that the value is modified correctly
     own_input_value = own_input.value
@@ -400,7 +386,7 @@ def check_return_expired(
 
     # 2) check that the output actually goes to the owner
     order_params = order.params
-    assert own_output.address == order_params.owner_address, "Invalid output address"
+    assert own_output.address == order_params.owner_address, "5"
 
     # 3) check that the value is modified correctly
     owned_before = own_input.resolved.value
@@ -425,7 +411,7 @@ def check_stop_loss(
     advanced_features = order_params.advanced_features
 
     if isinstance(advanced_features, Nothing):
-        assert False, "Advanced features required for stop-loss order"
+        assert False, "7"
 
     features: AdvancedOrderFeatures = advanced_features
 
@@ -440,7 +426,7 @@ def check_stop_loss(
             if input_address != order_params.owner_address:
                 if check_did_compliance(input_address, did_requirements, tx_info):
                     has_compliant_counterparty = True
-        assert has_compliant_counterparty, "No counterparty meets DID requirements"
+        assert has_compliant_counterparty, "4"
 
     # Check that the trigger price meets the stop-loss condition
     # Current price should be <= stop-loss price for sell orders
@@ -449,11 +435,11 @@ def check_stop_loss(
         trigger_price_num * features.stop_loss_price_den
         <= trigger_price_den * features.stop_loss_price_num
     )
-    assert current_price_valid, "Stop-loss price condition not met"
+    assert current_price_valid, "8"
 
     # Check minimum fill amount if specified
     if features.min_fill_amount > 0:
-        assert filled_amount >= features.min_fill_amount, "Fill amount below minimum"
+        assert filled_amount >= features.min_fill_amount, "9"
 
     # Validate the partial fill logic (reuse existing logic)
     check_partial(order, filled_amount, own_input, own_output, tx_info)
@@ -474,7 +460,7 @@ def check_twap_match(
     advanced_features = order_params.advanced_features
 
     if isinstance(advanced_features, Nothing):
-        assert False, "Advanced features required for TWAP order"
+        assert False, "A"
 
     features: AdvancedOrderFeatures = advanced_features
 
@@ -489,7 +475,7 @@ def check_twap_match(
             if input_address != order_params.owner_address:
                 if check_did_compliance(input_address, did_requirements, tx_info):
                     has_compliant_counterparty = True
-        assert has_compliant_counterparty, "No counterparty meets DID requirements"
+        assert has_compliant_counterparty, "4"
 
     # Check that TWAP interval is respected
     if features.twap_interval > 0:
@@ -500,7 +486,7 @@ def check_twap_match(
 
     # Check minimum fill amount if specified
     if features.min_fill_amount > 0:
-        assert filled_amount >= features.min_fill_amount, "Fill amount below minimum"
+        assert filled_amount >= features.min_fill_amount, "9"
 
     # Validate the partial fill logic (reuse existing logic)
     check_partial(order, filled_amount, own_input, own_output, tx_info)
@@ -530,7 +516,7 @@ def check_advanced_partial(
             if input_address != order_params.owner_address:
                 if check_did_compliance(input_address, did_requirements, tx_info):
                     has_compliant_counterparty = True
-        assert has_compliant_counterparty, "No counterparty meets DID requirements"
+        assert has_compliant_counterparty, "4"
 
     # Check minimum fill amount if advanced features are enabled
     if not isinstance(advanced_features, Nothing):
@@ -538,21 +524,10 @@ def check_advanced_partial(
         if features.min_fill_amount > 0:
             assert (
                 filled_amount >= features.min_fill_amount
-            ), "Fill amount below minimum"
+            ), "9"
 
     # Use existing partial validation logic
     check_partial(order, filled_amount, own_input, own_output, tx_info)
-
-
-def withdrawal_present(tx_info: TxInfo, own_staking_hash: StakingHash) -> bool:
-    """
-    Check if the withdrawal specified is present in the transaction
-    """
-    withdrawals = tx_info.wdrl
-    for skh, _ in withdrawals.items():
-        if skh == own_staking_hash:
-            return True
-    return False
 
 
 # build with
@@ -576,7 +551,7 @@ def validator(
         own_out_ref = purpose.tx_out_ref
         assert (
             own_out_ref == own_input.out_ref
-        ), "Input and output references do not match"
+        ), "B"
 
         own_output = tx_info.outputs[redeemer.output_index]
         # check the spender specific logic
@@ -613,4 +588,4 @@ def validator(
             # Return expired order
             check_return_expired(order, own_input, own_output, tx_info)
         else:
-            assert False, "Wrong redeemer"
+            assert False, "C"

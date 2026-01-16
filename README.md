@@ -74,7 +74,7 @@ After installation, verify everything works:
 
 ```bash
 # Test imports
-python -c "import pycardano, opshin, flask, pytest; print('All imports successful!')"
+python -c "import pycardano, opshin, flask, pytest, ogmios; print('All imports successful!')"
 
 # Run tests
 pytest src/tests/
@@ -111,6 +111,10 @@ The directory `src/auth_nft_minting_tool` contains the source code for
  - `hook`: a server that hosts an endpoint to be called by ProofSpace for receiving credentials and storing them in a DB
  - `server`: serving the backend used by `frontend` for connecting with the user DID DB populated by `hook`
  - `onchain`: the [OpShin](https://github.com/OpShin) contract used as a minting script for the DID authentication NFT
+
+#### *Example DID Minting Script*
+The directory `src/did_example_mint` contains a simple command-line script for minting test DID NFTs:
+ - `mint_did_nft.py`: A standalone script to mint DID NFTs for testing purposes. Since Atala PRISM has been retired by IOHK, this script allows users to create test DID NFTs that work with the orderbook's authentication layer.
 
 #### *Orderbook Smartcontracts with DID layer*
 The directory `src/orderbook` contains the source code for on-chain/off-chain interactions of the orderbook with the relevant authentication NFT
@@ -165,6 +169,7 @@ You can use the [testnet faucet](https://docs.cardano.org/cardano-testnet/tools/
 cd src/orderbook
 python3 create_keypair.py trader1
 python3 create_keypair.py trader2
+cd ..  # Return to src directory for subsequent commands
 ```
 
 Fund these wallets using the [Cardano Preprod Testnet Faucet](https://docs.cardano.org/cardano-testnet/tools/faucet/). **Important**: Select the `preprod` network!
@@ -189,19 +194,65 @@ opshin build minting src/orderbook/on_chain/free_mint.py -o src/orderbook/on_cha
 opshin build minting src/auth_nft_minting_tool/onchain/atala_did_nft.py -o src/auth_nft_minting_tool/onchain/build/atala_did_nft
 ```
 
-**Note:** The pre-compiled contracts in `build/` directories are ready to use. Recompilation is only needed if you modify the contract code.
+**Note:** The pre-compiled contracts in `build/` directories are ready to use. Recompilation is only needed if you modify the contract code. Use Python 3.9-3.11 with opshin 0.19.1 for compilation.
 
-#### 3. Mint Test Tokens
+#### 3. Deploy Reference Script (Recommended)
 
-Create test tokens for trading. Please wait for the blockchain to confirm transaction 1 before calling the code for trader1. 
+Deploying the orderbook contract as a reference script reduces transaction sizes and fees. This is especially important for the orderbook contract (~16KB).
 
 ```bash
-cd src/orderbook
+# From the src directory
+python -m orderbook.off_chain.deploy_reference_script trader1 orderbook
+```
+
+This stores the contract on-chain (~72 ADA locked) and subsequent operations will reference it instead of including the full script. The reference script location is saved automatically.
+
+**Deployed Reference Script (Preprod Testnet)**:
+- **Reference Script UTxO**: `f54f22ea202fbad0dad17d191b63af091d5afd98929fc0f750c49b6848b4f637#0`
+- **Contract Hash**: `0146cf769189d1b86e56e14d5c76c490163e238526839c4126563f13`
+- **Explorer Link**: [View on Cexplorer](https://preprod.cexplorer.io/tx/f54f22ea202fbad0dad17d191b63af091d5afd98929fc0f750c49b6848b4f637)
+
+**Note:** Reference scripts are optional but recommended. If not deployed, the full script will be included in each transaction.
+
+#### 5. Mint Test Tokens
+
+Create test tokens for trading. Please wait for the blockchain to confirm transaction 1 before calling the code for trader2. 
+
+```bash
+# Navigate to src directory (run module commands from here)
+cd src
+
 python -m orderbook.off_chain.mint_free trader1
 python -m orderbook.off_chain.mint_free trader2
 ```
 
+#### 6. Mint DID NFT (Required for Withdrawals/Cancellations)
+
+The DID NFT is required to cancel orders or withdraw funds from the orderbook. Since the Atala PRISM project has been retired, we provide a simple script to mint test DID NFTs.
+
+```bash
+# Mint a DID NFT for trader1
+python -m did_example_mint.mint_did_nft trader1
+
+# Mint a DID NFT for trader2
+python -m did_example_mint.mint_did_nft trader2
+```
+
+**Optional parameters:**
+
+```bash
+# Specify a custom DID identifier
+python -m did_example_mint.mint_did_nft trader1 --did-identifier "did:example:123456"
+
+# Specify a custom asset name (hex or string)
+python -m did_example_mint.mint_did_nft trader1 --asset-name "MyDIDToken"
+```
+
+**Note:** Each wallet needs its own DID NFT to cancel orders or withdraw matched funds. The NFT policy ID must match the one configured in the orderbook contract.
+
 ### Basic Trading Operations
+
+**Note:** All commands below should be run from the `src` directory.
 
 #### 1. Place an Order
 
@@ -213,15 +264,23 @@ python -m orderbook.off_chain.place_order trader1 trader1 0
 
 #### 2. Order Cancellation
 
-Cancel an order (requires DID NFT from the test script):
+Cancel an order (requires DID NFT - see step 6 above):
 
 ```bash
 python -m orderbook.off_chain.cancel_order trader1
 ```
 
-This will create a new trade with `trader1` as owner`. You can now only cancel the order when presenting the DID NFT of trader 1. 
+**Important:** You must have a DID NFT in your wallet to cancel orders. If you haven't minted one yet, run:
+
+```bash
+python -m did_example_mint.mint_did_nft trader1
+```
+
+The smart contract verifies that the DID NFT policy ID matches the expected DID minting policy before allowing the cancellation. 
 
 ## Advanced Features
+
+**Note:** All commands in this section should be run from the `src` directory.
 
 ### Multi-DID Types and Requirements
 
@@ -256,7 +315,7 @@ python -m orderbook.off_chain.place_order trader1 trader2 0 --stop-loss-price 50
 Ensure orders are only filled above a minimum threshold:
 
 ```bash
-python -m orderbook.off_chain.place_order trader1 trader2 0 --minimum-fill-amount 100
+python -m orderbook.off_chain.place_order trader1 trader2 0 --min-fill-amount 100
 ```
 
 ### Order Management
@@ -266,17 +325,17 @@ python -m orderbook.off_chain.place_order trader1 trader2 0 --minimum-fill-amoun
 Modify existing orders without cancellation:
 
 ```bash
-# Update order amount
+# Update order buy amount
 python -m orderbook.off_chain.modify_order trader1 --new-buy-amount 150
 
-# Update order price
-python -m orderbook.off_chain.modify_order trader1 --new-price 75
+# Update order sell amount
+python -m orderbook.off_chain.modify_order trader1 --new-sell-amount 200
 
-# Update stop-loss trigger
-python -m orderbook.off_chain.modify_order trader1 --new-stop-loss 45
+# Update stop-loss trigger price
+python -m orderbook.off_chain.modify_order trader1 --new-stop-loss-price 45
 ```
 
-**Note:** Due to the large size of the orderbook smart contract (33KB), atomic order modification may exceed Cardano's 16KB transaction size limit. If you encounter "Transaction size exceeds the max limit" errors, use separate cancel and place order commands instead:
+**Note:** Atomic order modification requires including the script twice in a transaction, which may exceed Cardano's 16KB transaction size limit. If you encounter "Transaction size exceeds the max limit" errors, use separate cancel and place order commands instead:
 
 ```bash
 # Cancel the existing order
@@ -285,8 +344,6 @@ python -m orderbook.off_chain.cancel_order trader1
 # Place a new order with updated parameters
 python -m orderbook.off_chain.place_order trader1 trader1 0 --buy-amount 150
 ```
-
-Future improvements will use reference scripts to overcome this limitation.
 
 #### Bulk Order Operations
 
@@ -433,6 +490,17 @@ If you encounter issues not covered here:
    - Steps to reproduce
 
 # Internal Testing Report
+
+## Verified Test Transactions (Preprod Testnet)
+
+The following transactions demonstrate successful operation of the DEX protocol with reference scripts:
+
+| Transaction | TX Hash | Description |
+|-------------|---------|-------------|
+| Deploy Reference Script | [`f54f22ea...b4f637`](https://preprod.cexplorer.io/tx/f54f22ea202fbad0dad17d191b63af091d5afd98929fc0f750c49b6848b4f637) | Deployed orderbook contract as reference script (~72 ADA locked) |
+| Mint Test Tokens | [`cb1fba1f...bb6e3a`](https://preprod.cexplorer.io/tx/cb1fba1fd06ecdd99468411c39a8c737b8612a9051c6db4a2d6f0faa44bb6e3a) | Minted 1M test tokens (muesli) for trading |
+| Place Order | [`77dc8072...5e046f`](https://preprod.cexplorer.io/tx/77dc80727e2c5001ff4355db816e723dc58fa00b903a7cd6635c1c12ea5e046f) | Placed sell order (300 muesli @ 3:1 ratio) |
+| Cancel Order (w/ Ref Script) | [`4a3a1743...bd505b`](https://preprod.cexplorer.io/tx/4a3a1743974cc37c6fdc683fe2ca41688dbdb4d086a4989df816f73057bd505b) | Cancelled order using reference script (reduced tx size to 0.63KB) |
 
 ## Overview
 

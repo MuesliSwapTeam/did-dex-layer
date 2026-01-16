@@ -17,7 +17,7 @@ from pycardano import (
 from orderbook.off_chain.util import sorted_utxos
 from orderbook.on_chain import orderbook
 from orderbook.off_chain.utils.keys import get_signing_info, get_address
-from orderbook.off_chain.utils.contracts import get_contract
+from orderbook.off_chain.utils.contracts import get_contract, find_reference_utxo
 from orderbook.off_chain.utils.from_script_context import from_address
 from orderbook.off_chain.utils.network import context, show_tx
 from orderbook.off_chain.utils.to_script_context import to_address, to_tx_out_ref
@@ -29,8 +29,11 @@ DID_NFT_POLICY_ID = ScriptHash.from_primitive(DID_NFT_POLICY_ID)
 
 @click.command()
 @click.argument("name")
+@click.option("--use-reference-script/--no-reference-script", default=True,
+              help="Use reference script if available (default: True)")
 def main(
     name: str,
+    use_reference_script: bool = True,
 ):
     payment_vkey, payment_skey, payment_address = get_signing_info(
         name, network=Network.TESTNET
@@ -39,7 +42,18 @@ def main(
         "orderbook", False, context
     )
 
-    # Find an expired order
+    # Try to find reference script UTxO
+    ref_script_utxo = None
+    if use_reference_script:
+        ref_script_utxo = find_reference_utxo(
+            "orderbook", context, [payment_address]
+        )
+        if ref_script_utxo:
+            print(f"Using reference script: {ref_script_utxo.input.transaction_id}#{ref_script_utxo.input.index}")
+        else:
+            print("No reference script found, including script in transaction")
+
+    # Find an order owned by this wallet
     owner_order_utxo = None
     owner_order_datum = None
     for utxo in context.utxos(orderbook_v3_address):
@@ -59,21 +73,31 @@ def main(
         print("No orders found")
         return
 
-    # Find a authentication NFT
+    # Find a DID authentication NFT
     valid_did_utxo = None
     payment_utxos = context.utxos(payment_address)
 
     for utxo in payment_utxos:
+        # Skip the reference script UTxO - we don't want to spend it
+        if ref_script_utxo and utxo.input == ref_script_utxo.input:
+            continue
         if utxo.output.amount.multi_asset.get(DID_NFT_POLICY_ID) is None:
             continue
 
         valid_did_utxo = utxo
         break
+    
     if valid_did_utxo is None:
-        print("No valid DID outxo found")
+        print("No valid DID NFT found")
         return
 
-    all_inputs_sorted = sorted_utxos(payment_utxos + [owner_order_utxo])
+    # Filter out reference script UTxO from payment inputs
+    payment_utxos_filtered = [
+        u for u in payment_utxos 
+        if not (ref_script_utxo and u.input == ref_script_utxo.input)
+    ]
+
+    all_inputs_sorted = sorted_utxos(payment_utxos_filtered + [owner_order_utxo])
     did_input_index = all_inputs_sorted.index(valid_did_utxo)
     cancel_redeemer = pycardano.Redeemer(
         orderbook.CancelOrder(
@@ -86,14 +110,48 @@ def main(
     builder.auxiliary_data = AuxiliaryData(
         data=AlonzoMetadata(metadata=Metadata({674: {"msg": ["Cancel DID Order"]}}))
     )
-    for u in payment_utxos:
+    
+    for u in payment_utxos_filtered:
         builder.add_input(u)
-    builder.add_script_input(
-        owner_order_utxo,
-        orderbook_script,
-        None,
-        cancel_redeemer,
-    )
+
+    # Add script input with reference script support
+    if ref_script_utxo:
+        # When using reference scripts, pass the reference UTxO as the script parameter
+        # pycardano will automatically use it as a reference script
+        builder.add_script_input(
+            owner_order_utxo,
+            script=ref_script_utxo,  # UTxO containing the reference script
+            datum=None,
+            redeemer=cancel_redeemer,
+        )
+    else:
+        # Include full script in transaction
+        builder.add_script_input(
+            owner_order_utxo,
+            orderbook_script,
+            None,
+            cancel_redeemer,
+        )
+    
+    # Add collateral for script execution
+    # Find a UTxO suitable for collateral (preferably pure ADA, but any will do)
+    collateral_utxo = None
+    for u in payment_utxos_filtered:
+        if u.output.amount.coin >= 5_000_000:
+            # Prefer pure ADA UTxOs
+            if len(u.output.amount.multi_asset) == 0:
+                collateral_utxo = u
+                break
+            elif collateral_utxo is None:
+                collateral_utxo = u
+    if collateral_utxo:
+        builder.collaterals.append(collateral_utxo)
+        print(f"Using collateral: {collateral_utxo.input.transaction_id}#{collateral_utxo.input.index}")
+    else:
+        print("WARNING: No suitable collateral UTxO found!")
+    
+    # Set minimum fee to avoid pycardano fee estimation bug
+    builder.fee = 600_000  # 0.6 ADA should cover script execution
 
     _return_value = owner_order_utxo.output.amount.coin
 
@@ -117,6 +175,7 @@ def main(
     # Submit the transaction
     context.submit_tx(signed_tx.to_cbor())
 
+    print(f"\nTransaction ID: {signed_tx.id}")
     show_tx(signed_tx)
 
 
