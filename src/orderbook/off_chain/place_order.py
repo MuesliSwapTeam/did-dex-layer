@@ -23,6 +23,40 @@ free_minting_contract_script, free_minting_contract_hash, _ = get_contract(
 )
 
 
+class CustomTransactionBuilder(TransactionBuilder):
+    """Custom TransactionBuilder that adds a buffer to the estimated fee."""
+    
+    def _estimate_fee(self):
+        """Override fee estimation to ensure reference script fees are properly calculated."""
+        from pycardano.utils import fee
+        from pycardano import ExecutionUnits
+        
+        # Get reference script size
+        ref_script_size = self._ref_script_size()
+        
+        # Recalculate execution units
+        plutus_execution_units = ExecutionUnits(0, 0)
+        for redeemer in self._redeemer_list:  # _redeemer_list is a property
+            plutus_execution_units += redeemer.ex_units
+        
+        # Calculate fee with proper reference script fee
+        # This ensures reference script fees are included correctly
+        estimated_fee = fee(
+            self.context,
+            len(self._build_full_fake_tx().to_cbor()),
+            plutus_execution_units.steps,
+            plutus_execution_units.mem,
+            ref_script_size,
+        )
+        
+        # Add buffer if set
+        if self.fee_buffer is not None:
+            estimated_fee += self.fee_buffer
+        
+        # Add a small buffer (1.05x) for estimation variance in transaction size
+        return int(estimated_fee * 1.05)
+
+
 @click.command()
 @click.argument("name")
 @click.argument("beneficiary")
@@ -107,7 +141,7 @@ def main(
     )
 
     # Build the transaction
-    builder = TransactionBuilder(context)
+    builder = CustomTransactionBuilder(context)
     builder.add_input_address(payment_address)
     builder.auxiliary_data = AuxiliaryData(
         data=AlonzoMetadata(
@@ -243,7 +277,8 @@ def main(
 
     # Set a reasonable minimum fee to work around pycardano fee estimation bug
     # The issue is that pycardano 0.9.0 doesn't properly account for datum size
-    builder.fee = 500_000  # 0.5 ADA should cover most transactions
+    # builder.fee = 500_000  # Removed in favor of CustomTransactionBuilder
+
     
     # Sign the transaction
     signed_tx = builder.build_and_sign(

@@ -27,6 +27,40 @@ DID_NFT_POLICY_ID = "672ae1e79585ad1543ef6b4b6c8989a17adcea3040f77ede128d9217"
 DID_NFT_POLICY_ID = ScriptHash.from_primitive(DID_NFT_POLICY_ID)
 
 
+class CustomTransactionBuilder(TransactionBuilder):
+    """Custom TransactionBuilder that adds a buffer to the estimated fee."""
+    
+    def _estimate_fee(self):
+        """Override fee estimation to ensure reference script fees are properly calculated."""
+        from pycardano.utils import fee
+        from pycardano import ExecutionUnits
+        
+        # Get reference script size
+        ref_script_size = self._ref_script_size()
+        
+        # Recalculate execution units
+        plutus_execution_units = ExecutionUnits(0, 0)
+        for redeemer in self._redeemer_list:  # _redeemer_list is a property
+            plutus_execution_units += redeemer.ex_units
+        
+        # Calculate fee with proper reference script fee
+        # This ensures reference script fees are included correctly
+        estimated_fee = fee(
+            self.context,
+            len(self._build_full_fake_tx().to_cbor()),
+            plutus_execution_units.steps,
+            plutus_execution_units.mem,
+            ref_script_size,
+        )
+        
+        # Add buffer if set
+        if self.fee_buffer is not None:
+            estimated_fee += self.fee_buffer
+        
+        # Add a small buffer (1.05x) for estimation variance in transaction size
+        return int(estimated_fee * 1.05)
+
+
 @click.command()
 @click.argument("name")
 @click.option("--use-reference-script/--no-reference-script", default=True,
@@ -63,7 +97,8 @@ def main(
             continue
         owner_pkh = order_datum.params.owner_pkh
 
-        if owner_pkh != to_address(payment_address).payment_credential.credential_hash:
+        # Compare payment credential hash directly from pycardano Address
+        if owner_pkh != payment_address.payment_part.payload:
             continue
 
         owner_order_datum = order_datum
@@ -93,11 +128,23 @@ def main(
 
     # Filter out reference script UTxO from payment inputs
     payment_utxos_filtered = [
-        u for u in payment_utxos 
+        u for u in payment_utxos
         if not (ref_script_utxo and u.input == ref_script_utxo.input)
     ]
 
-    all_inputs_sorted = sorted_utxos(payment_utxos_filtered + [owner_order_utxo])
+    # Use minimal inputs: DID NFT UTxO + one ADA-only UTxO for fees
+    ada_only_utxos = [
+        u for u in payment_utxos_filtered
+        if len(u.output.amount.multi_asset) == 0 and u != valid_did_utxo
+    ]
+    ada_only_utxos.sort(key=lambda u: u.output.amount.coin)
+    fee_utxo = ada_only_utxos[0] if ada_only_utxos else None
+
+    selected_inputs = [valid_did_utxo]
+    if fee_utxo:
+        selected_inputs.append(fee_utxo)
+
+    all_inputs_sorted = sorted_utxos(selected_inputs + [owner_order_utxo])
     did_input_index = all_inputs_sorted.index(valid_did_utxo)
     cancel_redeemer = pycardano.Redeemer(
         orderbook.CancelOrder(
@@ -106,12 +153,12 @@ def main(
     )
 
     # Build the transaction
-    builder = TransactionBuilder(context)
+    builder = CustomTransactionBuilder(context)
     builder.auxiliary_data = AuxiliaryData(
         data=AlonzoMetadata(metadata=Metadata({674: {"msg": ["Cancel DID Order"]}}))
     )
     
-    for u in payment_utxos_filtered:
+    for u in selected_inputs:
         builder.add_input(u)
 
     # Add script input with reference script support
@@ -151,7 +198,8 @@ def main(
         print("WARNING: No suitable collateral UTxO found!")
     
     # Set minimum fee to avoid pycardano fee estimation bug
-    builder.fee = 600_000  # 0.6 ADA should cover script execution
+    # builder.fee = 600_000  # Removed in favor of CustomTransactionBuilder
+
 
     _return_value = owner_order_utxo.output.amount.coin
 

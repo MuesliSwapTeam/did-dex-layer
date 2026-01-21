@@ -20,6 +20,39 @@ from orderbook.off_chain.utils.contracts import get_contract, find_reference_utx
 from orderbook.off_chain.utils.from_script_context import from_address
 from orderbook.off_chain.utils.network import context, show_tx
 from orderbook.off_chain.utils.to_script_context import to_address, to_tx_out_ref
+from pycardano.utils import fee
+from pycardano import ExecutionUnits
+
+
+class CustomTransactionBuilder(TransactionBuilder):
+    """Custom TransactionBuilder that ensures reference script fees are properly calculated."""
+    
+    def _estimate_fee(self):
+        """Override fee estimation to ensure reference script fees are properly calculated."""
+        # Get reference script size
+        ref_script_size = self._ref_script_size()
+        
+        # Recalculate execution units
+        plutus_execution_units = ExecutionUnits(0, 0)
+        for redeemer in self._redeemer_list:  # _redeemer_list is a property
+            plutus_execution_units += redeemer.ex_units
+        
+        # Calculate fee with proper reference script fee
+        # This ensures reference script fees are included correctly
+        estimated_fee = fee(
+            self.context,
+            len(self._build_full_fake_tx().to_cbor()),
+            plutus_execution_units.steps,
+            plutus_execution_units.mem,
+            ref_script_size,
+        )
+        
+        # Add buffer if set
+        if self.fee_buffer is not None:
+            estimated_fee += self.fee_buffer
+        
+        # Add a small buffer (1.05x) for estimation variance in transaction size
+        return int(estimated_fee * 1.05)
 
 
 def should_trigger_stop_loss(order_datum, market_price: float) -> bool:
@@ -153,7 +186,7 @@ def main(
         )
 
         # Build the transaction
-        builder = TransactionBuilder(context)
+        builder = CustomTransactionBuilder(context)
         builder.auxiliary_data = AuxiliaryData(
             data=AlonzoMetadata(
                 metadata=Metadata({674: {"msg": ["MuesliSwap Fill Order"]}})

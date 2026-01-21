@@ -24,13 +24,47 @@ from orderbook.off_chain.utils.keys import get_signing_info, get_address
 from orderbook.off_chain.utils.network import show_tx, context
 
 
+class CustomTransactionBuilder(TransactionBuilder):
+    """Custom TransactionBuilder that adds a buffer to the estimated fee."""
+    
+    def _estimate_fee(self):
+        """Override fee estimation to ensure reference script fees are properly calculated."""
+        from pycardano.utils import fee
+        from pycardano import ExecutionUnits
+        
+        # Get reference script size
+        ref_script_size = self._ref_script_size()
+        
+        # Recalculate execution units
+        plutus_execution_units = ExecutionUnits(0, 0)
+        for redeemer in self._redeemer_list:  # _redeemer_list is a property
+            plutus_execution_units += redeemer.ex_units
+        
+        # Calculate fee with proper reference script fee
+        # This ensures reference script fees are included correctly
+        estimated_fee = fee(
+            self.context,
+            len(self._build_full_fake_tx().to_cbor()),
+            plutus_execution_units.steps,
+            plutus_execution_units.mem,
+            ref_script_size,
+        )
+        
+        # Add buffer if set
+        if self.fee_buffer is not None:
+            estimated_fee += self.fee_buffer
+        
+        # Add a small buffer (1.05x) for estimation variance in transaction size
+        return int(estimated_fee * 1.05)
+
+
 def get_did_contract():
     """Load the DID NFT minting contract."""
     from pathlib import Path
     from pycardano import PlutusV2Script, plutus_script_hash
     
     # Path to the built DID contract
-    build_dir = Path(__file__).parent.parent.parent / "auth_nft_minting_tool/onchain/build/atala_did_nft"
+    build_dir = Path(__file__).parent.parent / "auth_nft_minting_tool/onchain/build/atala_did_nft"
     script_cbor_path = build_dir / "script.cbor"
     
     if not script_cbor_path.exists():
@@ -90,7 +124,7 @@ def main(
     
     # Generate asset name if not provided (use hash of DID identifier)
     if asset_name is None:
-        did_hash = hashlib.sha256(did_identifier.encode()).digest()[:32]
+        did_hash = hashlib.sha256(did_identifier).digest()[:32]
         asset_name_bytes = did_hash
     else:
         # Convert string to bytes if needed
@@ -116,7 +150,7 @@ def main(
     click.echo(f"Using Policy ID: {policy_id} (computed from contract)")
     
     # Build the transaction
-    builder = TransactionBuilder(context)
+    builder = CustomTransactionBuilder(context)
     builder.auxiliary_data = AuxiliaryData(
         data=AlonzoMetadata(
             metadata=Metadata({674: {"msg": ["Mint Example DID NFT"]}})

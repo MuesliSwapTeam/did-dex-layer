@@ -23,6 +23,39 @@ from pycardano import (
 from orderbook.off_chain.utils.keys import get_signing_info, network
 from orderbook.off_chain.utils.contracts import get_contract, get_ref_utxo, save_reference_utxo
 from orderbook.off_chain.utils.network import context, show_tx
+from pycardano.utils import fee
+from pycardano import ExecutionUnits
+
+
+class CustomTransactionBuilder(TransactionBuilder):
+    """Custom TransactionBuilder that ensures reference script fees are properly calculated."""
+    
+    def _estimate_fee(self):
+        """Override fee estimation to ensure reference script fees are properly calculated."""
+        # Get reference script size
+        ref_script_size = self._ref_script_size()
+        
+        # Recalculate execution units
+        plutus_execution_units = ExecutionUnits(0, 0)
+        for redeemer in self._redeemer_list:  # _redeemer_list is a property
+            plutus_execution_units += redeemer.ex_units
+        
+        # Calculate fee with proper reference script fee
+        # This ensures reference script fees are included correctly
+        estimated_fee = fee(
+            self.context,
+            len(self._build_full_fake_tx().to_cbor()),
+            plutus_execution_units.steps,
+            plutus_execution_units.mem,
+            ref_script_size,
+        )
+        
+        # Add buffer if set
+        if self.fee_buffer is not None:
+            estimated_fee += self.fee_buffer
+        
+        # Add a small buffer (1.05x) for estimation variance in transaction size
+        return int(estimated_fee * 1.05)
 
 
 @click.command()
@@ -64,13 +97,36 @@ def main(name: str, contract_name: str):
     
     # Calculate minimum lovelace required for the output
     min_lvl = min_lovelace(context, ref_output)
-    ref_output.amount = Value(min_lvl + 1000000)  # Add 1 ADA buffer
+    ref_output.amount = Value(min_lvl)
     
     print(f"Required lovelace for reference UTxO: {ref_output.amount}")
     
     # Build the transaction (no metadata to minimize size)
-    builder = TransactionBuilder(context)
-    builder.add_input_address(payment_address)
+    builder = CustomTransactionBuilder(context)
+    # Select a single ADA-only UTxO to minimize tx size
+    utxos = context.utxos(payment_address)
+    # Rough fee buffer for selection (actual fee is computed later)
+    required_coin = ref_output.amount.coin + 1_000_000
+    ada_only_utxos = [u for u in utxos if len(u.output.amount.multi_asset) == 0]
+    ada_only_utxos.sort(key=lambda u: u.output.amount.coin, reverse=True)
+
+    selected_utxos = []
+    total_coin = 0
+    for u in ada_only_utxos:
+        selected_utxos.append(u)
+        total_coin += u.output.amount.coin
+        if total_coin >= required_coin:
+            break
+
+    if total_coin < required_coin:
+        # Fallback: use the largest available UTxO (may include multi-asset)
+        utxos.sort(key=lambda u: u.output.amount.coin, reverse=True)
+        if not utxos:
+            raise RuntimeError("No UTxOs available to fund reference script deployment.")
+        selected_utxos = [utxos[0]]
+
+    for u in selected_utxos:
+        builder.add_input(u)
     builder.add_output(ref_output)
     
     # Sign and submit

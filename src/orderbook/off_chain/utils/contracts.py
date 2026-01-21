@@ -117,6 +117,14 @@ def find_reference_utxo(
     if saved_info:
         try:
             address = Address.from_primitive(saved_info["address"])
+            # Prefer exact tx_id/index match from saved info
+            for utxo in context.utxos(address):
+                if (
+                    str(utxo.input.transaction_id) == saved_info["tx_id"]
+                    and utxo.input.index == saved_info["index"]
+                ):
+                    return utxo
+            # Fallback to script equality check
             ref_utxo = get_ref_utxo(contract_script, context, address)
             if ref_utxo is not None:
                 return ref_utxo

@@ -18,13 +18,40 @@ from pycardano import (
     Value,
     MultiAsset,
     Asset,
+    ExecutionUnits,
 )
+from pycardano.utils import fee
 
 from orderbook.on_chain import orderbook
 from orderbook.off_chain.utils.network import context, network
 from orderbook.off_chain.utils.keys import get_signing_info, get_address
 from orderbook.off_chain.utils.contracts import get_contract
 from orderbook.off_chain.utils.to_script_context import to_address
+
+
+class CustomTransactionBuilder(TransactionBuilder):
+    """Custom TransactionBuilder that ensures reference script fees are properly calculated."""
+
+    def _estimate_fee(self):
+        """Override fee estimation to ensure reference script fees are properly calculated."""
+        ref_script_size = self._ref_script_size()
+
+        plutus_execution_units = ExecutionUnits(0, 0)
+        for redeemer in self._redeemer_list:
+            plutus_execution_units += redeemer.ex_units
+
+        estimated_fee = fee(
+            self.context,
+            len(self._build_full_fake_tx().to_cbor()),
+            plutus_execution_units.steps,
+            plutus_execution_units.mem,
+            ref_script_size,
+        )
+
+        if self.fee_buffer is not None:
+            estimated_fee += self.fee_buffer
+
+        return int(estimated_fee * 1.05)
 
 
 class OrderbookDebugger:
@@ -238,7 +265,7 @@ class OrderbookDebugger:
 
             # Step 2: Build transaction
             debug_info["steps"].append("Building transaction...")
-            builder = TransactionBuilder(context)
+            builder = CustomTransactionBuilder(context)
 
             # Add inputs
             for input_data in transaction_data.get("inputs", []):
