@@ -4,7 +4,6 @@ from typing import Optional
 import click
 import pycardano
 from pycardano import (
-    TransactionBuilder,
     TransactionOutput,
     Asset,
     AuxiliaryData,
@@ -15,6 +14,7 @@ from pycardano import (
 )
 
 from orderbook.off_chain.util import sorted_utxos
+from orderbook.off_chain.utils.transaction_builder import TransactionBuilder
 from orderbook.on_chain import orderbook
 from orderbook.off_chain.utils.keys import get_signing_info, get_address
 from orderbook.off_chain.utils.contracts import get_contract, find_reference_utxo
@@ -25,40 +25,6 @@ from orderbook.off_chain.utils.to_script_context import to_address, to_tx_out_re
 
 DID_NFT_POLICY_ID = "672ae1e79585ad1543ef6b4b6c8989a17adcea3040f77ede128d9217"
 DID_NFT_POLICY_ID = ScriptHash.from_primitive(DID_NFT_POLICY_ID)
-
-
-class CustomTransactionBuilder(TransactionBuilder):
-    """Custom TransactionBuilder that adds a buffer to the estimated fee."""
-    
-    def _estimate_fee(self):
-        """Override fee estimation to ensure reference script fees are properly calculated."""
-        from pycardano.utils import fee
-        from pycardano import ExecutionUnits
-        
-        # Get reference script size
-        ref_script_size = self._ref_script_size()
-        
-        # Recalculate execution units
-        plutus_execution_units = ExecutionUnits(0, 0)
-        for redeemer in self._redeemer_list:  # _redeemer_list is a property
-            plutus_execution_units += redeemer.ex_units
-        
-        # Calculate fee with proper reference script fee
-        # This ensures reference script fees are included correctly
-        estimated_fee = fee(
-            self.context,
-            len(self._build_full_fake_tx().to_cbor()),
-            plutus_execution_units.steps,
-            plutus_execution_units.mem,
-            ref_script_size,
-        )
-        
-        # Add buffer if set
-        if self.fee_buffer is not None:
-            estimated_fee += self.fee_buffer
-        
-        # Add a small buffer (1.05x) for estimation variance in transaction size
-        return int(estimated_fee * 1.05)
 
 
 @click.command()
@@ -153,7 +119,13 @@ def main(
     )
 
     # Build the transaction
-    builder = CustomTransactionBuilder(context)
+    # Use standard TransactionBuilder with increased fee buffer to account for:
+    # - Reference script fees (large overhead for 30KB+ scripts)
+    # - Plutus script execution
+    # - Transaction size estimation variance
+    # - DID NFT validation complexity
+    builder = TransactionBuilder(context)
+    builder.fee_buffer = 1_500_000  # Add 1.5 ADA buffer for script execution with reference scripts
     builder.auxiliary_data = AuxiliaryData(
         data=AlonzoMetadata(metadata=Metadata({674: {"msg": ["Cancel DID Order"]}}))
     )
@@ -196,10 +168,6 @@ def main(
         print(f"Using collateral: {collateral_utxo.input.transaction_id}#{collateral_utxo.input.index}")
     else:
         print("WARNING: No suitable collateral UTxO found!")
-    
-    # Set minimum fee to avoid pycardano fee estimation bug
-    # builder.fee = 600_000  # Removed in favor of CustomTransactionBuilder
-
 
     _return_value = owner_order_utxo.output.amount.coin
 

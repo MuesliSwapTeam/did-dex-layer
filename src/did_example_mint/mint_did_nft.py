@@ -7,7 +7,6 @@ The NFT can be used with the orderbook for authentication.
 import click
 import hashlib
 from pycardano import (
-    TransactionBuilder,
     Redeemer,
     AuxiliaryData,
     AlonzoMetadata,
@@ -22,40 +21,7 @@ from pycardano import (
 
 from orderbook.off_chain.utils.keys import get_signing_info, get_address
 from orderbook.off_chain.utils.network import show_tx, context
-
-
-class CustomTransactionBuilder(TransactionBuilder):
-    """Custom TransactionBuilder that adds a buffer to the estimated fee."""
-    
-    def _estimate_fee(self):
-        """Override fee estimation to ensure reference script fees are properly calculated."""
-        from pycardano.utils import fee
-        from pycardano import ExecutionUnits
-        
-        # Get reference script size
-        ref_script_size = self._ref_script_size()
-        
-        # Recalculate execution units
-        plutus_execution_units = ExecutionUnits(0, 0)
-        for redeemer in self._redeemer_list:  # _redeemer_list is a property
-            plutus_execution_units += redeemer.ex_units
-        
-        # Calculate fee with proper reference script fee
-        # This ensures reference script fees are included correctly
-        estimated_fee = fee(
-            self.context,
-            len(self._build_full_fake_tx().to_cbor()),
-            plutus_execution_units.steps,
-            plutus_execution_units.mem,
-            ref_script_size,
-        )
-        
-        # Add buffer if set
-        if self.fee_buffer is not None:
-            estimated_fee += self.fee_buffer
-        
-        # Add a small buffer (1.05x) for estimation variance in transaction size
-        return int(estimated_fee * 1.05)
+from orderbook.off_chain.utils.transaction_builder import TransactionBuilder
 
 
 def get_did_contract():
@@ -64,14 +30,16 @@ def get_did_contract():
     from pycardano import PlutusV2Script, plutus_script_hash
     
     # Path to the built DID contract
-    build_dir = Path(__file__).parent.parent / "auth_nft_minting_tool/onchain/build/atala_did_nft"
-    script_cbor_path = build_dir / "script.cbor"
+    # From src/did_example_mint/mint_did_nft.py, we need to go to src/auth_nft_minting_tool/...
+    script_dir = Path(__file__).parent.parent / "auth_nft_minting_tool" / "onchain" / "build" / "atala_did_nft"
+    script_cbor_path = script_dir / "script.cbor"
     
     if not script_cbor_path.exists():
         raise FileNotFoundError(
-            f"DID contract not found at {script_cbor_path}. "
-            "Please compile the contract first using: "
-            "opshin build minting src/auth_nft_minting_tool/onchain/atala_did_nft.py -o src/auth_nft_minting_tool/onchain/build/atala_did_nft"
+            f"❌ DID contract not found at {script_cbor_path}. "
+            "Please compile the contract first using:\n"
+            "opshin build minting src/auth_nft_minting_tool/onchain/atala_did_nft.py "
+            "-o src/auth_nft_minting_tool/onchain/build/atala_did_nft"
         )
     
     with open(script_cbor_path) as f:
@@ -124,7 +92,9 @@ def main(
     
     # Generate asset name if not provided (use hash of DID identifier)
     if asset_name is None:
-        did_hash = hashlib.sha256(did_identifier).digest()[:32]
+        # Convert DID identifier string to bytes before hashing
+        did_bytes = did_identifier.encode() if isinstance(did_identifier, str) else did_identifier
+        did_hash = hashlib.sha256(did_bytes).digest()[:32]
         asset_name_bytes = did_hash
     else:
         # Convert string to bytes if needed
@@ -150,7 +120,9 @@ def main(
     click.echo(f"Using Policy ID: {policy_id} (computed from contract)")
     
     # Build the transaction
-    builder = CustomTransactionBuilder(context)
+    # Use standard TransactionBuilder with high fee buffer for minting script
+    builder = TransactionBuilder(context)
+    builder.fee_buffer = 500_000  # 0.5 ADA buffer for minting script execution
     builder.auxiliary_data = AuxiliaryData(
         data=AlonzoMetadata(
             metadata=Metadata({674: {"msg": ["Mint Example DID NFT"]}})

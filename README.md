@@ -345,17 +345,6 @@ python -m orderbook.off_chain.cancel_order trader1
 python -m orderbook.off_chain.place_order trader1 trader1 0 --buy-amount 150
 ```
 
-#### Bulk Order Operations
-
-Execute multiple payments in a single transaction:
-
-```bash
-# Pay ADA to multiple recipients
-python -m orderbook.off_chain.bulk_payments trader1 --recipients addr1... --recipients addr2... --amounts 1000000 --amounts 2000000
-
-# Or use a JSON file for payments
-python -m orderbook.off_chain.bulk_payments trader1 --payments-file payments.json
-```
 
 ## Testing
 

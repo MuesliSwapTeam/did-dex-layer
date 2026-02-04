@@ -11,7 +11,6 @@ from typing import Optional
 import click
 import pycardano
 from pycardano import (
-    TransactionBuilder,
     TransactionOutput,
     Asset,
     AuxiliaryData,
@@ -24,43 +23,11 @@ from pycardano import (
 from orderbook.off_chain.util import sorted_utxos
 from orderbook.on_chain import orderbook
 from orderbook.off_chain.utils.keys import get_signing_info, get_address, network
-from orderbook.off_chain.utils.contracts import get_contract
+from orderbook.off_chain.utils.contracts import get_contract, find_reference_utxo
 from orderbook.off_chain.utils.from_script_context import from_address
 from orderbook.off_chain.utils.network import context, show_tx
 from orderbook.off_chain.utils.to_script_context import to_address, to_tx_out_ref
-from pycardano.utils import fee
-from pycardano import ExecutionUnits
-
-
-class CustomTransactionBuilder(TransactionBuilder):
-    """Custom TransactionBuilder that ensures reference script fees are properly calculated."""
-    
-    def _estimate_fee(self):
-        """Override fee estimation to ensure reference script fees are properly calculated."""
-        # Get reference script size
-        ref_script_size = self._ref_script_size()
-        
-        # Recalculate execution units
-        plutus_execution_units = ExecutionUnits(0, 0)
-        for redeemer in self._redeemer_list:  # _redeemer_list is a property
-            plutus_execution_units += redeemer.ex_units
-        
-        # Calculate fee with proper reference script fee
-        # This ensures reference script fees are included correctly
-        estimated_fee = fee(
-            self.context,
-            len(self._build_full_fake_tx().to_cbor()),
-            plutus_execution_units.steps,
-            plutus_execution_units.mem,
-            ref_script_size,
-        )
-        
-        # Add buffer if set
-        if self.fee_buffer is not None:
-            estimated_fee += self.fee_buffer
-        
-        # Add a small buffer (1.05x) for estimation variance in transaction size
-        return int(estimated_fee * 1.05)
+from orderbook.off_chain.utils.transaction_builder import TransactionBuilder
 
 # DID policy IDs for validation
 DID_NFT_POLICY_ID = bytes.fromhex(
@@ -116,6 +83,11 @@ DID_NFT_POLICY_ID = ScriptHash.from_primitive(DID_NFT_POLICY_ID)
     is_flag=True,
     help="Allow trading with users without DIDs",
 )
+@click.option(
+    "--use-reference-script/--no-reference-script",
+    default=True,
+    help="Use reference script if available (default: True)",
+)
 def main(
     name: str,
     new_sell_amount: Optional[int] = None,
@@ -127,6 +99,7 @@ def main(
     require_accredited_investor: bool = False,
     require_business_entity: bool = False,
     allow_non_did_trading: bool = False,
+    use_reference_script: bool = True,
 ):
     """
     Modify an existing order by canceling it and placing a new one in the same transaction.
@@ -150,6 +123,17 @@ def main(
     free_minting_contract_script, free_minting_contract_hash, _ = get_contract(
         "free_mint", False
     )
+
+    # Try to find reference script UTxO
+    ref_script_utxo = None
+    if use_reference_script:
+        ref_script_utxo = find_reference_utxo(
+            "orderbook", context, [payment_address]
+        )
+        if ref_script_utxo:
+            print(f"Using reference script: {ref_script_utxo.input.transaction_id}#{ref_script_utxo.input.index}")
+        else:
+            print("No reference script found, including script in transaction")
 
     # Find user's existing order
     user_order_utxo = None
@@ -182,6 +166,9 @@ def main(
     payment_utxos = context.utxos(payment_address)
 
     for utxo in payment_utxos:
+        # Skip the reference script UTxO - we don't want to spend it
+        if ref_script_utxo and utxo.input == ref_script_utxo.input:
+            continue
         if utxo.output.amount.multi_asset.get(DID_NFT_POLICY_ID) is None:
             continue
         valid_did_utxo = utxo
@@ -190,6 +177,12 @@ def main(
     if valid_did_utxo is None:
         print("No valid DID NFT found - required for order modification")
         return
+
+    # Filter out reference script UTxO from payment inputs
+    payment_utxos_filtered = [
+        u for u in payment_utxos
+        if not (ref_script_utxo and u.input == ref_script_utxo.input)
+    ]
 
     # Prepare new order parameters based on existing order and modifications
     original_params = user_order_datum.params
@@ -228,12 +221,12 @@ def main(
 
     # Filter payment UTXOs to only include necessary ones (reduce transaction size)
     # We need: DID NFT utxo + minimal ADA utxos for fees
-    # The orderbook script is 33KB so we need to keep the transaction as small as possible
+    # With reference scripts, the transaction is much smaller
     necessary_utxos = [valid_did_utxo]
 
     # Add up to 2 ADA-only UTXOs for fees (the minimum needed)
     ada_only_count = 0
-    for utxo in payment_utxos:
+    for utxo in payment_utxos_filtered:
         if utxo == valid_did_utxo:
             continue
         # Only include UTXOs with pure ADA (no multi-assets)
@@ -253,7 +246,13 @@ def main(
         )
     )
 
-    builder = CustomTransactionBuilder(context)
+    # Use standard TransactionBuilder with increased fee buffer to account for:
+    # - Reference script fees (30KB+ scripts)
+    # - Plutus script execution (cancel + place)
+    # - Large datums with advanced features
+    # - Transaction size estimation variance
+    builder = TransactionBuilder(context)
+    builder.fee_buffer = 1_500_000  # Add 1.5 ADA buffer for cancel + place operations
     builder.auxiliary_data = AuxiliaryData(
         data=AlonzoMetadata(
             metadata=Metadata({674: {"msg": ["MuesliSwap Modify Order"]}})
@@ -264,13 +263,24 @@ def main(
     for u in necessary_utxos:
         builder.add_input(u)
 
-    # Cancel the existing order
-    builder.add_script_input(
-        user_order_utxo,
-        orderbook_script,
-        None,
-        cancel_redeemer,
-    )
+    # Cancel the existing order - use reference script if available
+    if ref_script_utxo:
+        # When using reference scripts, pass the reference UTxO as the script parameter
+        # pycardano will automatically use it as a reference script
+        builder.add_script_input(
+            user_order_utxo,
+            script=ref_script_utxo,  # UTxO containing the reference script
+            datum=None,
+            redeemer=cancel_redeemer,
+        )
+    else:
+        # Include full script in transaction
+        builder.add_script_input(
+            user_order_utxo,
+            orderbook_script,
+            None,
+            cancel_redeemer,
+        )
 
     # Create new order with modified parameters
     beneficiary_address = from_address(original_params.owner_address)

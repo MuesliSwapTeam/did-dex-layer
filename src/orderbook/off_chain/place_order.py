@@ -3,7 +3,6 @@ import datetime
 import click
 import pycardano
 from pycardano import (
-    TransactionBuilder,
     TransactionOutput,
     Asset,
     AuxiliaryData,
@@ -17,44 +16,11 @@ from orderbook.off_chain.utils.contracts import get_contract
 from orderbook.off_chain.utils.from_script_context import from_address
 from orderbook.off_chain.utils.network import context, show_tx
 from orderbook.off_chain.utils.to_script_context import to_address
+from orderbook.off_chain.utils.transaction_builder import TransactionBuilder
 
 free_minting_contract_script, free_minting_contract_hash, _ = get_contract(
     "free_mint", False, context
 )
-
-
-class CustomTransactionBuilder(TransactionBuilder):
-    """Custom TransactionBuilder that adds a buffer to the estimated fee."""
-    
-    def _estimate_fee(self):
-        """Override fee estimation to ensure reference script fees are properly calculated."""
-        from pycardano.utils import fee
-        from pycardano import ExecutionUnits
-        
-        # Get reference script size
-        ref_script_size = self._ref_script_size()
-        
-        # Recalculate execution units
-        plutus_execution_units = ExecutionUnits(0, 0)
-        for redeemer in self._redeemer_list:  # _redeemer_list is a property
-            plutus_execution_units += redeemer.ex_units
-        
-        # Calculate fee with proper reference script fee
-        # This ensures reference script fees are included correctly
-        estimated_fee = fee(
-            self.context,
-            len(self._build_full_fake_tx().to_cbor()),
-            plutus_execution_units.steps,
-            plutus_execution_units.mem,
-            ref_script_size,
-        )
-        
-        # Add buffer if set
-        if self.fee_buffer is not None:
-            estimated_fee += self.fee_buffer
-        
-        # Add a small buffer (1.05x) for estimation variance in transaction size
-        return int(estimated_fee * 1.05)
 
 
 @click.command()
@@ -141,7 +107,13 @@ def main(
     )
 
     # Build the transaction
-    builder = CustomTransactionBuilder(context)
+    # Use standard TransactionBuilder with increased fee buffer to account for:
+    # - Reference script fees
+    # - Datum size variations (especially with advanced features)
+    # - Transaction size estimation variance
+    # Higher buffer needed as pycardano's estimator may underestimate with large datums
+    builder = TransactionBuilder(context)
+    builder.fee_buffer = 800_000  # Add 0.8 ADA buffer for datum + multi-output operations
     builder.add_input_address(payment_address)
     builder.auxiliary_data = AuxiliaryData(
         data=AlonzoMetadata(
@@ -274,11 +246,6 @@ def main(
                 datum=datum,
             )
         )
-
-    # Set a reasonable minimum fee to work around pycardano fee estimation bug
-    # The issue is that pycardano 0.9.0 doesn't properly account for datum size
-    # builder.fee = 500_000  # Removed in favor of CustomTransactionBuilder
-
     
     # Sign the transaction
     signed_tx = builder.build_and_sign(

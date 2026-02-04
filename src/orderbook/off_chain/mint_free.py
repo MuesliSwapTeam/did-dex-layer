@@ -1,6 +1,5 @@
 import click
 from pycardano import (
-    TransactionBuilder,
     Redeemer,
     AuxiliaryData,
     AlonzoMetadata,
@@ -10,46 +9,13 @@ from pycardano import (
     Value,
     AssetName,
     Asset,
+    Network,
 )
 
 from orderbook.off_chain.utils.keys import get_signing_info, get_address
 from orderbook.off_chain.utils.contracts import get_contract
 from orderbook.off_chain.utils.network import show_tx, context
-from pycardano import Network
-
-
-class CustomTransactionBuilder(TransactionBuilder):
-    """Custom TransactionBuilder that adds a buffer to the estimated fee."""
-    
-    def _estimate_fee(self):
-        """Override fee estimation to ensure reference script fees are properly calculated."""
-        from pycardano.utils import fee
-        from pycardano import ExecutionUnits
-        
-        # Get reference script size
-        ref_script_size = self._ref_script_size()
-        
-        # Recalculate execution units
-        plutus_execution_units = ExecutionUnits(0, 0)
-        for redeemer in self._redeemer_list:  # _redeemer_list is a property
-            plutus_execution_units += redeemer.ex_units
-        
-        # Calculate fee with proper reference script fee
-        # This ensures reference script fees are included correctly
-        estimated_fee = fee(
-            self.context,
-            len(self._build_full_fake_tx().to_cbor()),
-            plutus_execution_units.steps,
-            plutus_execution_units.mem,
-            ref_script_size,
-        )
-        
-        # Add buffer if set
-        if self.fee_buffer is not None:
-            estimated_fee += self.fee_buffer
-        
-        # Add a small buffer (1.05x) for estimation variance in transaction size
-        return int(estimated_fee * 1.05)
+from orderbook.off_chain.utils.transaction_builder import TransactionBuilder
 
 
 @click.command()
@@ -81,7 +47,11 @@ def main(
     )
 
     # Build the transaction
-    builder = CustomTransactionBuilder(context)
+    # Use standard TransactionBuilder with increased fee buffer to account for:
+    # - Minting script execution
+    # - Transaction size estimation variance
+    builder = TransactionBuilder(context)
+    builder.fee_buffer = 600_000  # Add 0.6 ADA buffer for minting operations
     builder.auxiliary_data = AuxiliaryData(
         data=AlonzoMetadata(metadata=Metadata({674: {"msg": [f"Mint {token_name}"]}}))
     )
