@@ -22,54 +22,6 @@ from opshin.ledger.interval import *
 
 
 @dataclass()
-class AdvancedOrderFeatures(PlutusData):
-    """
-    Advanced order features and parameters
-    """
-
-    CONSTR_ID = 0
-    # Stop-loss: trigger price ratio (numerator, denominator)
-    stop_loss_price_num: int
-    stop_loss_price_den: int
-    # Minimum fill amount (0 means no minimum)
-    min_fill_amount: int
-    # TWAP: time interval for averaging (in milliseconds, 0 means disabled)
-    twap_interval: int
-    # Maximum slippage allowed (basis points, 0 means no limit)
-    max_slippage_bps: int
-
-
-@dataclass()
-class DIDType(PlutusData):
-    """
-    Different types of DID authentication levels
-    """
-
-    CONSTR_ID = 0
-    # DID provider policy ID
-    policy_id: bytes
-    # Required token name pattern (empty bytes means any token name accepted)
-    required_token_name: bytes
-    # Minimum authentication level (0 = basic, 1 = verified, 2 = accredited, 3 = institutional)
-    min_auth_level: int
-
-
-@dataclass()
-class DIDRequirements(PlutusData):
-    """
-    DID requirements for order execution
-    """
-
-    CONSTR_ID = 0
-    # List of accepted DID types (empty list means any DID accepted)
-    accepted_did_types: List[DIDType]
-    # Whether both parties need to meet DID requirements
-    require_counterparty_did: int  # 0 = no, 1 = yes
-    # Whether to allow trading with non-DID users
-    allow_non_did_trading: int  # 0 = no, 1 = yes
-
-
-@dataclass()
 class OrderParams(PlutusData):
     """
     Unchangable parameters of an order
@@ -88,10 +40,6 @@ class OrderParams(PlutusData):
     return_reward: int
     # amount attached to the order for minUTxO (usually 2-2.5 ADA)
     min_utxo: int
-    # Advanced order features (optional)
-    advanced_features: Union[AdvancedOrderFeatures, Nothing]
-    # DID requirements for this order (optional)
-    did_requirements: Union[DIDRequirements, Nothing]
 
 
 @dataclass()
@@ -133,38 +81,7 @@ class ReturnExpired(PlutusData):
     output_index: int
 
 
-@dataclass()
-class StopLossMatch(PlutusData):
-    """
-    Match triggered by stop-loss condition
-    """
-
-    CONSTR_ID = 5
-    input_index: int
-    output_index: int
-    filled_amount: int
-    # Current market price that triggered the stop-loss (numerator, denominator)
-    trigger_price_num: int
-    trigger_price_den: int
-
-
-@dataclass()
-class TWAPMatch(PlutusData):
-    """
-    Time-weighted average price match
-    """
-
-    CONSTR_ID = 6
-    input_index: int
-    output_index: int
-    filled_amount: int
-    # Reference to previous TWAP execution
-    previous_twap_ref: Union[TxOutRef, Nothing]
-
-
-OrderAction = Union[
-    CancelOrder, FullMatch, PartialMatch, ReturnExpired, StopLossMatch, TWAPMatch
-]
+OrderAction = Union[CancelOrder, FullMatch, PartialMatch, ReturnExpired]
 
 
 # This datum has to accompany the output associated with the order
@@ -172,63 +89,83 @@ OutDatum = TxOutRef
 
 Lovelace = Token(b"", b"")
 
-# DID_NFT_POLICY_ID = b'\xafx\xc4\x04\\Po\xe7\x1a\x85\xb9B\xe02\xe9hX~\xb126;J6K\\\xae\x00'
+# Primary DID NFT policy accepted by the orderbook. This must match the
+# permissioned DID minting policy deployed for the current testnet release.
+DID_NFT_POLICY_ID = b"\xfa\x46\xb0\xa2\xf3\x93\x01\xfe\x0d\x68\x69\x35\x49\x9c\xd8\x83\x5f\x69\xfc\x98\x70\x7c\x52\x83\xd8\xfd\x60\x66"
 
-# Primary DID NFT policy (existing Atala PRISM)
-DID_NFT_POLICY_ID = b"\x67\x2a\xe1\xe7\x95\x85\xad\x15\x43\xef\x6b\x4b\x6c\x89\x89\xa1\x7a\xdc\xea\x30\x40\xf7\x7e\xde\x12\x8d\x92\x17"
-
-# Example additional DID provider policy IDs
-ACCREDITED_INVESTOR_POLICY_ID = b"\xab\xc1\x23\xe7\x95\x85\xad\x15\x43\xef\x6b\x4b\x6c\x89\x89\xa1\x7a\xdc\xea\x30\x40\xf7\x7e\xde\x12\x8d\x94\x56"
-
-BUSINESS_ENTITY_POLICY_ID = b"\xde\xf4\x56\xe7\x95\x85\xad\x15\x43\xef\x6b\x4b\x6c\x89\x89\xa1\x7a\xdc\xea\x30\x40\xf7\x7e\xde\x12\x8d\x97\x89"
-
-
-def has_did_nft_in_inputs(
-    user_address: Address, policy_id: bytes, tx_info: TxInfo
+def has_did_token_in_inputs(
+    user_address: Address, policy_id: bytes, required_token_name: bytes, tx_info: TxInfo
 ) -> bool:
     """
-    Check if user has a specific DID NFT policy in their transaction inputs
-    Simplified for OpShin compatibility - checks if user has inputs with the policy
-    Note: Simplified implementation - assumes presence indicates ownership
+    Check whether a user spends a positive DID token matching a policy and
+    optional token name. Spending the DID UTxO requires the user's wallet
+    signature, so this proves wallet-level DID ownership for this transaction.
     """
     empty_token_dict: Dict[TokenName, int] = {}
     for tx_input in tx_info.inputs:
         if tx_input.resolved.address == user_address:
-            value = tx_input.resolved.value
-            # Check if policy ID exists by getting with empty dict default
-            # If we get something back that has length > 0, policy exists
-            tokens = value.get(policy_id, empty_token_dict)
-            if len(tokens) > 0:
-                return True
+            tokens = tx_input.resolved.value.get(policy_id, empty_token_dict)
+            for token_amount in tokens.items():
+                token_name = token_amount[0]
+                amount = token_amount[1]
+                if amount > 0 and (
+                    required_token_name == b"" or required_token_name == token_name
+                ):
+                    return True
     return False
 
 
-def check_did_compliance(
-    user_address: Address, did_requirements: DIDRequirements, tx_info: TxInfo
+def has_primary_did(user_address: Address, tx_info: TxInfo) -> bool:
+    return has_did_token_in_inputs(user_address, DID_NFT_POLICY_ID, b"", tx_info)
+
+
+def check_owner_did(order: Order, tx_info: TxInfo) -> None:
+    assert has_primary_did(order.params.owner_address, tx_info), "DID_OWNER"
+
+
+def check_counterparty_did(order: Order, tx_info: TxInfo) -> None:
+    owner_address = order.params.owner_address
+    has_counterparty_did = False
+    for input_info in tx_info.inputs:
+        input_address = input_info.resolved.address
+        if input_address != owner_address and has_primary_did(input_address, tx_info):
+            has_counterparty_did = True
+    assert has_counterparty_did, "DID_COUNTERPARTY"
+
+
+def valid_range_ends_at_or_before_expiry(
+    expiry: ExtendedPOSIXTime, tx_info: TxInfo
 ) -> bool:
-    """
-    Check if user meets DID requirements for order execution
-    """
-    # If no DID requirements specified, allow execution
-    if len(did_requirements.accepted_did_types) == 0:
+    upper = tx_info.valid_range.upper_bound.limit
+    if isinstance(expiry, PosInfPOSIXTime):
         return True
+    if isinstance(expiry, NegInfPOSIXTime):
+        return False
+    if isinstance(upper, NegInfPOSIXTime):
+        return True
+    if isinstance(upper, PosInfPOSIXTime):
+        return False
+    if isinstance(expiry, FinitePOSIXTime):
+        if isinstance(upper, FinitePOSIXTime):
+            return upper.time <= expiry.time
+    return False
 
-    # Check if user has any DID NFTs at all
-    has_any_did = (
-        has_did_nft_in_inputs(user_address, DID_NFT_POLICY_ID, tx_info)
-        or has_did_nft_in_inputs(user_address, ACCREDITED_INVESTOR_POLICY_ID, tx_info)
-        or has_did_nft_in_inputs(user_address, BUSINESS_ENTITY_POLICY_ID, tx_info)
-    )
 
-    # If no DID tokens and non-DID trading is allowed
-    if not has_any_did:
-        return did_requirements.allow_non_did_trading == 1
-
-    # Check if user has any of the required DID types
-    for required_did_type in did_requirements.accepted_did_types:
-        if has_did_nft_in_inputs(user_address, required_did_type.policy_id, tx_info):
-            return True
-
+def valid_range_starts_at_or_after_expiry(
+    expiry: ExtendedPOSIXTime, tx_info: TxInfo
+) -> bool:
+    lower = tx_info.valid_range.lower_bound.limit
+    if isinstance(expiry, PosInfPOSIXTime):
+        return False
+    if isinstance(expiry, NegInfPOSIXTime):
+        return True
+    if isinstance(lower, PosInfPOSIXTime):
+        return True
+    if isinstance(lower, NegInfPOSIXTime):
+        return False
+    if isinstance(expiry, FinitePOSIXTime):
+        if isinstance(lower, FinitePOSIXTime):
+            return lower.time >= expiry.time
     return False
 
 
@@ -247,15 +184,11 @@ def check_cancel(order: Order, tx_info: TxInfo, own_input: TxInInfo) -> None:
     which allows the owner to do anything with the order
     """
 
-    # check if DID NFT bucket is present (do not enforce here)
-    own_input_resolved = own_input.resolved
-
     # check if owner cancels
     assert (
         order.params.owner_pkh in tx_info.signatories
     ), "2"
-
-    # assert _nft_bucket is not None, "CANCEL NFT NOT PRESENT"
+    check_owner_did(order, tx_info)
 
 
 def check_full(
@@ -266,24 +199,12 @@ def check_full(
 
     # check that we have new output datum for order
     order_params = order.params
+    assert valid_range_ends_at_or_before_expiry(order_params.expiry_date, tx_info), "EXP_FILL"
+    check_counterparty_did(order, tx_info)
     new_out_datum = Order(order_params, 0, own_input.out_ref, 0)
 
     output_datum: Order = resolve_datum_unsafe(own_output, tx_info)
     assert output_datum == new_out_datum, "3"
-
-    # Check DID requirements if specified
-    # Note: We check all non-owner inputs for DID compliance (
-    did_reqs = order_params.did_requirements
-    if not isinstance(did_reqs, Nothing):
-        did_requirements: DIDRequirements = did_reqs
-        # Check that at least one non-owner input meets DID requirements
-        has_compliant_counterparty = False
-        for input_info in tx_info.inputs:
-            input_address = input_info.resolved.address
-            if input_address != order_params.owner_address:
-                if check_did_compliance(input_address, did_requirements, tx_info):
-                    has_compliant_counterparty = True
-        assert has_compliant_counterparty, "4"
 
     # make sure that the order creator gets at least what they ordered
     # 1) check that the output actually remains at the contract - this is to ensure the DID layer where the user has to cancel
@@ -317,9 +238,13 @@ def check_partial(
     """
     Check that the order is partially filled and the continuing output is set correctly
     """
+    check_counterparty_did(order, tx_info)
+
     # 1) check that the ratio is valid
     order_buy_amount = order.buy_amount
     assert 0 < filled_amount < order_buy_amount, "6"
+    assert order.params.allow_partial == 1, "PARTIAL_DISABLED"
+    assert valid_range_ends_at_or_before_expiry(order.params.expiry_date, tx_info), "EXP_FILL"
 
     # 2) check that the output datum is set correctly
     new_buy_amount = order_buy_amount - filled_amount
@@ -382,6 +307,10 @@ def check_return_expired(
     """
     # 1) check that the output datum is set correctly
     # NOTE: No need to enforce the out ref is unique, this is true by default
+    assert valid_range_starts_at_or_after_expiry(
+        order.params.expiry_date, tx_info
+    ), "EXP_RETURN"
+    check_owner_did(order, tx_info)
     check_out_datum(own_output, own_input.out_ref, tx_info)
 
     # 2) check that the output actually goes to the owner
@@ -393,141 +322,6 @@ def check_return_expired(
     owned_after = own_output.value
     expected_owned_after = subtract_lovelace(owned_before, order_params.return_reward)
     check_greater_or_equal_value(owned_after, expected_owned_after)
-
-
-def check_stop_loss(
-    order: Order,
-    filled_amount: int,
-    trigger_price_num: int,
-    trigger_price_den: int,
-    own_input: TxInInfo,
-    own_output: TxOut,
-    tx_info: TxInfo,
-) -> None:
-    """
-    Check that stop-loss order is triggered correctly
-    """
-    order_params = order.params
-    advanced_features = order_params.advanced_features
-
-    if isinstance(advanced_features, Nothing):
-        assert False, "7"
-
-    features: AdvancedOrderFeatures = advanced_features
-
-    # Check DID requirements if specified
-    did_reqs = order_params.did_requirements
-    if not isinstance(did_reqs, Nothing):
-        did_requirements: DIDRequirements = did_reqs
-        # Check that at least one non-owner input meets DID requirements
-        has_compliant_counterparty = False
-        for input_info in tx_info.inputs:
-            input_address = input_info.resolved.address
-            if input_address != order_params.owner_address:
-                if check_did_compliance(input_address, did_requirements, tx_info):
-                    has_compliant_counterparty = True
-        assert has_compliant_counterparty, "4"
-
-    # Check that the trigger price meets the stop-loss condition
-    # Current price should be <= stop-loss price for sell orders
-    # For simplicity, we assume this is a sell stop-loss
-    current_price_valid = (
-        trigger_price_num * features.stop_loss_price_den
-        <= trigger_price_den * features.stop_loss_price_num
-    )
-    assert current_price_valid, "8"
-
-    # Check minimum fill amount if specified
-    if features.min_fill_amount > 0:
-        assert filled_amount >= features.min_fill_amount, "9"
-
-    # Validate the partial fill logic (reuse existing logic)
-    check_partial(order, filled_amount, own_input, own_output, tx_info)
-
-
-def check_twap_match(
-    order: Order,
-    filled_amount: int,
-    previous_twap_ref: Union[TxOutRef, Nothing],
-    own_input: TxInInfo,
-    own_output: TxOut,
-    tx_info: TxInfo,
-) -> None:
-    """
-    Check that TWAP order execution is valid
-    """
-    order_params = order.params
-    advanced_features = order_params.advanced_features
-
-    if isinstance(advanced_features, Nothing):
-        assert False, "A"
-
-    features: AdvancedOrderFeatures = advanced_features
-
-    # Check DID requirements if specified
-    did_reqs = order_params.did_requirements
-    if not isinstance(did_reqs, Nothing):
-        did_requirements: DIDRequirements = did_reqs
-        # Check that at least one non-owner input meets DID requirements
-        has_compliant_counterparty = False
-        for input_info in tx_info.inputs:
-            input_address = input_info.resolved.address
-            if input_address != order_params.owner_address:
-                if check_did_compliance(input_address, did_requirements, tx_info):
-                    has_compliant_counterparty = True
-        assert has_compliant_counterparty, "4"
-
-    # Check that TWAP interval is respected
-    if features.twap_interval > 0:
-        current_time = tx_info.valid_range.lower_bound.limit
-        # For simplicity, we don't enforce exact timing here
-        # In a real implementation, we'd check against the previous execution time
-        pass
-
-    # Check minimum fill amount if specified
-    if features.min_fill_amount > 0:
-        assert filled_amount >= features.min_fill_amount, "9"
-
-    # Validate the partial fill logic (reuse existing logic)
-    check_partial(order, filled_amount, own_input, own_output, tx_info)
-
-
-def check_advanced_partial(
-    order: Order,
-    filled_amount: int,
-    own_input: TxInInfo,
-    own_output: TxOut,
-    tx_info: TxInfo,
-) -> None:
-    """
-    Check partial order with advanced features validation
-    """
-    order_params = order.params
-    advanced_features = order_params.advanced_features
-
-    # Check DID requirements if specified
-    did_reqs = order_params.did_requirements
-    if not isinstance(did_reqs, Nothing):
-        did_requirements: DIDRequirements = did_reqs
-        # Check that at least one non-owner input meets DID requirements
-        has_compliant_counterparty = False
-        for input_info in tx_info.inputs:
-            input_address = input_info.resolved.address
-            if input_address != order_params.owner_address:
-                if check_did_compliance(input_address, did_requirements, tx_info):
-                    has_compliant_counterparty = True
-        assert has_compliant_counterparty, "4"
-
-    # Check minimum fill amount if advanced features are enabled
-    if not isinstance(advanced_features, Nothing):
-        features: AdvancedOrderFeatures = advanced_features
-        if features.min_fill_amount > 0:
-            assert (
-                filled_amount >= features.min_fill_amount
-            ), "9"
-
-    # Use existing partial validation logic
-    check_partial(order, filled_amount, own_input, own_output, tx_info)
 
 
 # build with
@@ -543,6 +337,10 @@ def validator(
 
     if isinstance(redeemer, CancelOrder):
         own_input = tx_info.inputs[redeemer.input_index]
+        own_out_ref = purpose.tx_out_ref
+        assert (
+            own_out_ref == own_input.out_ref
+        ), "B"
         check_cancel(order, tx_info, own_input)
     else:
         own_input = tx_info.inputs[redeemer.input_index]
@@ -560,30 +358,7 @@ def validator(
             check_full(order, own_input, own_output, tx_info)
         elif isinstance(redeemer, PartialMatch):
             # The order is partially filled and the continuing output is set correctly
-            check_advanced_partial(
-                order, redeemer.filled_amount, own_input, own_output, tx_info
-            )
-        elif isinstance(redeemer, StopLossMatch):
-            # Stop-loss order triggered
-            check_stop_loss(
-                order,
-                redeemer.filled_amount,
-                redeemer.trigger_price_num,
-                redeemer.trigger_price_den,
-                own_input,
-                own_output,
-                tx_info,
-            )
-        elif isinstance(redeemer, TWAPMatch):
-            # TWAP order execution
-            check_twap_match(
-                order,
-                redeemer.filled_amount,
-                redeemer.previous_twap_ref,
-                own_input,
-                own_output,
-                tx_info,
-            )
+            check_partial(order, redeemer.filled_amount, own_input, own_output, tx_info)
         elif isinstance(redeemer, ReturnExpired):
             # Return expired order
             check_return_expired(order, own_input, own_output, tx_info)

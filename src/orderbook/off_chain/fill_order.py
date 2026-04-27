@@ -22,42 +22,6 @@ from orderbook.off_chain.utils.to_script_context import to_address, to_tx_out_re
 from orderbook.off_chain.utils.transaction_builder import TransactionBuilder
 
 
-def should_trigger_stop_loss(order_datum, market_price: float) -> bool:
-    """Check if a stop-loss order should be triggered based on current market price."""
-    if (
-        not hasattr(order_datum.params, "advanced_features")
-        or order_datum.params.advanced_features is None
-    ):
-        return False
-
-    try:
-        advanced_features = order_datum.params.advanced_features
-        if advanced_features.stop_loss_price_num > 0 and market_price is not None:
-            stop_loss_price = (
-                advanced_features.stop_loss_price_num
-                / advanced_features.stop_loss_price_den
-            )
-            return market_price <= stop_loss_price
-    except:
-        pass
-    return False
-
-
-def meets_minimum_fill(order_datum, fill_amount: int) -> bool:
-    """Check if the fill amount meets the minimum fill requirement."""
-    if (
-        not hasattr(order_datum.params, "advanced_features")
-        or order_datum.params.advanced_features is None
-    ):
-        return True
-
-    try:
-        advanced_features = order_datum.params.advanced_features
-        return fill_amount >= advanced_features.min_fill_amount
-    except:
-        return True
-
-
 def get_appropriate_redeemer(
     order_datum,
     fill_amount: int,
@@ -65,20 +29,7 @@ def get_appropriate_redeemer(
     order_input_index: int,
     order_output_index: int,
 ):
-    """Determine the appropriate redeemer type based on order characteristics."""
-    # Check if this should be a stop-loss match
-    if should_trigger_stop_loss(order_datum, market_price):
-        price_num = int(market_price * 10000) if market_price else 10000
-        price_den = 10000
-        return orderbook.StopLossMatch(
-            input_index=order_input_index,
-            output_index=order_output_index,
-            filled_amount=fill_amount,
-            trigger_price_num=price_num,
-            trigger_price_den=price_den,
-        )
-
-    # Check if this is a full match or partial match
+    """Determine whether this fill is a full or partial match."""
     if fill_amount >= order_datum.buy_amount:
         return orderbook.FullMatch(
             input_index=order_input_index,
@@ -176,28 +127,14 @@ def main(
             # Calculate fill amount (for now, assume full fill)
             fill_amount = order_datum.buy_amount
 
-            # Check if the fill meets minimum requirements
-            if enable_advanced_matching and not meets_minimum_fill(
-                order_datum, fill_amount
-            ):
-                print(f"Order {i} does not meet minimum fill requirement, skipping")
-                continue
-
             # Get the appropriate redeemer based on order type
-            if enable_advanced_matching:
-                redeemer_data = get_appropriate_redeemer(
-                    order_datum,
-                    fill_amount,
-                    current_market_price,
-                    order_input_index,
-                    order_output_index,
-                )
-            else:
-                # Default to FullMatch for backward compatibility
-                redeemer_data = orderbook.FullMatch(
-                    input_index=order_input_index,
-                    output_index=order_output_index,
-                )
+            redeemer_data = get_appropriate_redeemer(
+                order_datum,
+                fill_amount,
+                current_market_price,
+                order_input_index,
+                order_output_index,
+            )
 
             fill_order_redeemer = pycardano.Redeemer(redeemer_data)
 
@@ -254,9 +191,14 @@ def main(
                 _return_value = order_utxo.output.amount - _taken_reward - sell_asset
             builder.add_output(
                 TransactionOutput(
-                    address=owner_address if not steal else payment_address,
+                    address=orderbook_v3_address if not steal else payment_address,
                     amount=_return_value,
-                    datum=to_tx_out_ref(order_utxo.input),
+                    datum=orderbook.Order(
+                        order_datum.params,
+                        0,
+                        to_tx_out_ref(order_utxo.input),
+                        0,
+                    ),
                 ),
             )
             builder.mint += buy_asset.multi_asset

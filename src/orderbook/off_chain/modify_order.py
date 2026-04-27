@@ -8,6 +8,7 @@ modification without the risk of having no active order between operations.
 
 import datetime
 from typing import Optional
+from pathlib import Path
 import click
 import pycardano
 from pycardano import (
@@ -30,9 +31,15 @@ from orderbook.off_chain.utils.to_script_context import to_address, to_tx_out_re
 from orderbook.off_chain.utils.transaction_builder import TransactionBuilder
 
 # DID policy IDs for validation
-DID_NFT_POLICY_ID = bytes.fromhex(
-    "672ae1e79585ad1543ef6b4b6c8989a17adcea3040f77ede128d9217"
+DID_POLICY_FILE = (
+    Path(__file__).resolve().parents[2]
+    / "auth_nft_minting_tool"
+    / "onchain"
+    / "build"
+    / "atala_did_nft"
+    / "script.policy_id"
 )
+DID_NFT_POLICY_ID = bytes.fromhex(DID_POLICY_FILE.read_text().strip())
 DID_NFT_POLICY_ID = ScriptHash.from_primitive(DID_NFT_POLICY_ID)
 
 
@@ -197,28 +204,6 @@ def main(
         new_buy_amount if new_buy_amount is not None else user_order_datum.buy_amount
     )
 
-    # Create advanced features (merge new and existing)
-    stop_loss_price = new_stop_loss_price
-    min_fill_amount = new_min_fill_amount if new_min_fill_amount is not None else 0
-    twap_interval = new_twap_interval if new_twap_interval is not None else 0
-    max_slippage = new_max_slippage if new_max_slippage is not None else 0.0
-
-    # If original order had advanced features, preserve them unless overridden
-    if not isinstance(original_params.advanced_features, orderbook.Nothing):
-        orig_features = original_params.advanced_features
-        if stop_loss_price is None and orig_features.stop_loss_price_num > 0:
-            stop_loss_price = (
-                orig_features.stop_loss_price_num / orig_features.stop_loss_price_den
-            )
-        if new_min_fill_amount is None:
-            min_fill_amount = orig_features.min_fill_amount
-        if new_twap_interval is None:
-            twap_interval = orig_features.twap_interval // (
-                60 * 1000
-            )  # Convert back to minutes
-        if new_max_slippage is None:
-            max_slippage = orig_features.max_slippage_bps / 100.0
-
     # Filter payment UTXOs to only include necessary ones (reduce transaction size)
     # We need: DID NFT utxo + minimal ADA utxos for fees
     # With reference scripts, the transaction is much smaller
@@ -238,11 +223,11 @@ def main(
 
     # Build transaction that cancels old order and places new one
     all_inputs_sorted = sorted_utxos(necessary_utxos + [user_order_utxo])
-    did_input_index = all_inputs_sorted.index(valid_did_utxo)
+    order_input_index = all_inputs_sorted.index(user_order_utxo)
 
     cancel_redeemer = pycardano.Redeemer(
         orderbook.CancelOrder(
-            input_index=did_input_index,
+            input_index=order_input_index,
         )
     )
 
@@ -296,55 +281,13 @@ def main(
         pycardano.AssetName(original_params.buy.token_name),
     )
 
-    # Create advanced features if any are specified
-    advanced_features = orderbook.Nothing()
-    if stop_loss_price or min_fill_amount > 0 or twap_interval > 0 or max_slippage > 0:
-        stop_loss_num = int(stop_loss_price * 10000) if stop_loss_price else 0
-        stop_loss_den = 10000 if stop_loss_price else 1
-        twap_interval_ms = twap_interval * 60 * 1000
-        slippage_bps = int(max_slippage * 100)
-
-        advanced_features = orderbook.AdvancedOrderFeatures(
-            stop_loss_num,
-            stop_loss_den,
-            min_fill_amount,
-            twap_interval_ms,
-            slippage_bps,
-        )
-
-    # Create DID requirements if any are specified
-    did_requirements = orderbook.Nothing()
-    if require_accredited_investor or require_business_entity or allow_non_did_trading:
-        accepted_did_types = []
-
-        if require_accredited_investor:
-            accredited_did_type = orderbook.DIDType(
-                orderbook.ACCREDITED_INVESTOR_POLICY_ID,
-                b"",  # Any token name
-                2,  # Accredited investor level
-            )
-            accepted_did_types.append(accredited_did_type)
-
-        if require_business_entity:
-            business_did_type = orderbook.DIDType(
-                orderbook.BUSINESS_ENTITY_POLICY_ID,
-                b"",  # Any token name
-                3,  # Business entity level
-            )
-            accepted_did_types.append(business_did_type)
-
-        did_requirements = orderbook.DIDRequirements(
-            accepted_did_types,
-            1,  # Require counterparty DID
-            1 if allow_non_did_trading else 0,  # Allow non-DID trading
-        )
-    elif not isinstance(original_params.did_requirements, orderbook.Nothing):
-        # Preserve original DID requirements if no new ones specified
-        did_requirements = original_params.did_requirements
-
     # Create new order parameters
     min_utxo = original_params.min_utxo
     return_reward = original_params.return_reward
+
+    expiry_ms = int(
+        (datetime.datetime.now() + datetime.timedelta(days=1)).timestamp() * 1000
+    )
 
     new_params = orderbook.OrderParams(
         beneficiary_pkh.payload,
@@ -352,11 +295,9 @@ def main(
         orderbook.Token(buy_token[0].payload, buy_token[1].payload),
         orderbook.Token(sell_token[0].payload, sell_token[1].payload),
         1,  # Allow partial fills
-        orderbook.FinitePOSIXTime(int(datetime.datetime.now().timestamp() * 1000)),
+        orderbook.FinitePOSIXTime(expiry_ms),
         return_reward,
         min_utxo,
-        advanced_features,
-        did_requirements,
     )
 
     # Make new order datum

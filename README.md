@@ -8,76 +8,68 @@ This repository contains the documentation and code for the implementation of th
 - [System Architecture](#system-architecture)
 - [Repository Structure](#repository-structure)
 - [User Guide](#user-guide)
-- [Advanced Features](#advanced-features)
 - [Testing](#testing)
 - [Demos](#demos)
 - [Troubleshooting](#troubleshooting)
-- [Contributing](#contributing)
 
 ## Overview
 
 The Cardano DEX Protocol with DIDs Layer implements a decentralized exchange that integrates Decentralized Identifier (DID) authentication for enhanced security and compliance. The system ensures that while anyone can place trades, only users with verified DIDs can withdraw funds or cancel orders.
 
 ### Key Features
-- **DID-Based Authentication**: Integration with Atala PRISM for user verification
-- **Advanced Order Types**: Support for stop-loss orders, minimum fill amounts, and TWAP execution
-- **Multi-DID Provider Support**: Compatibility with various DID verification levels
-- **Compliance Framework**: DID requirements for counterparties in trading
-- **Atomic Order Modification**: Real-time order updates without cancellation
+- **DID-Based Authentication**: Permissioned DID NFT minting for verified users
+- **Orderbook Trading**: Preprod order placement, cancellation, and fill transaction builders
+- **Frontend Interface**: Vite + React interface for DID registration and trading
 
 ## Installation
-
-The project includes a pre-built PyCardano wheel in the `vendor/` directory, eliminating the need for external repository access.
-
-### Quick Start (Recommended)
 
 ```bash
 # Clone the repository
 git clone <your-repo-url> did-dex-layer
 cd did-dex-layer
-
-# Run the installation script
-./install.sh
 ```
 
-The script will:
-1. Check if you're in a virtual environment (creates one if needed)
-2. Install the vendored PyCardano wheel
-3. Install all other dependencies
-4. Verify the installation
+### Runtime Environment
 
-### Manual Installation
-
-If you prefer to install manually:
+Use this environment for tests, backend, frontend-backed transaction builders, and live Preprod orderbook commands.
 
 ```bash
-# 1. Create and activate a virtual environment
-# Note: Requires Python 3.9-3.11 (Python 3.12+ is incompatible with opshin versions for pycardano 0.9.0)
-python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# 2. Install PyCardano from the vendored wheel
-pip install vendor/pycardano-0.9.0-py3-none-any.whl
-
-# 3. Install other dependencies
-pip install -r requirements.txt
-
-# 4. Verify installation
-python -c "import pycardano; version = getattr(pycardano, '__version__', '0.9.0 (custom)'); print(f'PyCardano {version}')"
-python -c "import opshin; print('OpShin OK')"
-python -c "import fire; print('Fire OK')"
+python3.11 -m venv .venv311
+.venv311/bin/python -m pip install --upgrade pip
+.venv311/bin/python -m pip install \
+  "pycardano>=0.19,<0.20" "fastapi>=0.101,<0.102" "uvicorn[standard]" \
+  fastapi-cache2 slowapi peewee==3.17.0 pyjwt==2.8.0 cryptography==36.0.2 \
+  pytest pytest-asyncio pytest-cov flask flask-cors ogmios fire blockfrost-python \
+  "aiohttp[speedups]" async-lru gelidum orjson psutil click
+.venv311/bin/python -m pip install --no-deps "opshin==0.19.1"
+.venv311/bin/python -c "import pycardano, fastapi, uvicorn, pytest, ogmios, opshin; print('runtime OK')"
 ```
 
-### Verification
+### Contract Compiler Environment
+
+Use this environment only when recompiling OpShin contracts. The repository includes the required PyCardano 0.9 wheel in `vendor/`.
+
+```bash
+python3.11 -m venv .venv_opshin
+.venv_opshin/bin/python -m pip install --upgrade pip
+.venv_opshin/bin/python -m pip install vendor/pycardano-0.9.0-py3-none-any.whl
+.venv_opshin/bin/python -m pip install "opshin==0.19.1" fire
+.venv_opshin/bin/python -c "import pycardano, opshin, fire; print('compiler OK')"
+```
+
+### Frontend Dependencies
+
+```bash
+cd src/did_dex_frontend
+npm install
+cd ../..
+```
 
 After installation, verify everything works:
 
 ```bash
-# Test imports
-python -c "import pycardano, opshin, flask, pytest, ogmios; print('All imports successful!')"
-
-# Run tests
-pytest src/tests/
+.venv311/bin/python -m pytest src/tests/
+cd src/did_dex_frontend && npm test && npm run build && cd ../..
 ```
 
 ## System Architecture
@@ -88,6 +80,36 @@ The system consists of three main components:
 2. **Enhanced Orderbook Contracts**: Smart contracts with integrated DID validation
 3. **Frontend Interface**: User-friendly trading interface with DID integration
 
+## DID DEX Application
+
+The new DID DEX application replaces the retired ProofSpace minting dependency with a lightweight permissioned registration flow:
+
+- `src/did_dex_backend`: FastAPI backend for DID registration, DID status checks, order indexing, analytics, and unsigned transaction construction.
+- `src/did_dex_frontend`: Vite + React + TypeScript frontend for DID registration and orderbook trading.
+- `src/auth_nft_minting_tool/onchain/atala_did_nft.py`: permissioned DID NFT minting policy. It requires both the issuer signature and recipient wallet signature and mints exactly one DID NFT.
+
+### Run The DID DEX Locally
+
+```bash
+# backend
+.venv311/bin/python -m uvicorn --app-dir src did_dex_backend.main:app --reload --host 0.0.0.0 --port 8000
+
+# frontend
+cd src/did_dex_frontend
+npm run dev
+```
+
+For production/testnet serving, build the frontend and start the backend. The FastAPI app serves `src/did_dex_frontend/dist` when it exists.
+
+```bash
+cd src/did_dex_frontend
+npm run build
+cd ../..
+.venv311/bin/python -m uvicorn --app-dir src did_dex_backend.main:app --host 0.0.0.0 --port 8000
+```
+
+The backend uses checked-in Preprod pair/script configuration and runtime SQLite state under `runtime/did_dex/`. The issuer signing key must be available as `src/keys/did_issuer.skey`; the DID minting script should be compiled/deployed with that issuer key hash as its script parameter before a live Preprod smoke test.
+
 ## Repository Structure
 
 ### Report
@@ -95,31 +117,17 @@ The system consists of three main components:
 The directory `report` contains a detailed report of our research results, design sketch,
 and implementation strategy as promised for Milestone 1 of the project.
 
-### Atala PRISM Authenticanion Framework & On-chain Orderbook Smart Contracts  (Milestone 2)
-
-The directory contains two parts. The first part is the connection to the DID plafrom that allows for the minting of DID NFTs. The second part is a modified orderbook DEX contract that asks a user to present a DID NFT when withdrawing funds from the swap smart contract (i.e. after an order is matched or the user cancels his order). This ensures that only users can swap/withdraw funds that have a valid DID authentication. The first part is based on the authentication tool developed ion [Atala Prism Voting Project](https://projectcatalyst.io/funds/10/f10-atala-prism-launch-ecosystem/dao-governance-x-atala-prism-by-muesliswap) and modified for use in this codebase. The second part is a new orderbook contract with added DID layer specifically developed for this project. As the Atala Prism project has been retired by IOHK we added an additional script to create blackbox NFTs that can be used. This script can be found in `src/did_example_mint`.
 
 ### Protocol Explanation
 This section provides a brief explanation of how the DID (Decentralized Identifier) layer functions. Anyone can place a trade by locking funds with the correct datum at the smart contract address. However, to withdraw or cancel an open position, a valid DID NFT (Non-Fungible Token) must be presented. For example, when a user initiates a transaction and later decides to cancel it, they must present the DID NFT during the cancellation process. The smart contract verifies that the policy ID of the DID NFT matches the policy ID of the DID minting tool. Since a "centralized entity" is responsible for verifying and issuing the DID, this validation can be conducted reliably. When a transaction is matched with another transaction, the funds remain in the contract until the user withdraws them. To do so, the user must use the cancel redeemer, which again requires presenting a valid DID NFT. The key benefit of this approach is that while anyone can participate in the protocol, only users who have verified their identity through the DID system will be able to withdraw funds. This ensures a layer of security and accountability within the protocol.
 
-The system now supports multiple DID types (basic verified, accredited investors, business entities) and advanced order features including stop-loss orders, minimum fill amounts, TWAP execution, and atomic order modification. Orders can specify DID requirements for counterparties, enabling compliance-focused trading restrictions.
-
-
 #### *DID Minting Tool*
-The directory `src/auth_nft_minting_tool` contains the source code for
- - `frontend`: a DID authentication NFT minting tool that uses ProofSpace authentication
- - `hook`: a server that hosts an endpoint to be called by ProofSpace for receiving credentials and storing them in a DB
- - `server`: serving the backend used by `frontend` for connecting with the user DID DB populated by `hook`
- - `onchain`: the [OpShin](https://github.com/OpShin) contract used as a minting script for the DID authentication NFT
-
-#### *Example DID Minting Script*
-The directory `src/did_example_mint` contains a simple command-line script for minting test DID NFTs:
- - `mint_did_nft.py`: A standalone script to mint DID NFTs for testing purposes. Since Atala PRISM has been retired by IOHK, this script allows users to create test DID NFTs that work with the orderbook's authentication layer.
+The active DID minting flow is implemented by `src/did_dex_backend` together with the permissioned on-chain policy in `src/auth_nft_minting_tool/onchain/atala_did_nft.py`.
 
 #### *Orderbook Smartcontracts with DID layer*
 The directory `src/orderbook` contains the source code for on-chain/off-chain interactions of the orderbook with the relevant authentication NFT
- - `on-chain`: the on-chain smart contracts that are the core of the DEX including the DID layer, advanced order types (stop-loss, minimum fill, TWAP), and multi-DID provider support
- - `off-chain`: code to build examples to interact with the DEX smart contracts, including order modification and DID-based trading restrictions 
+ - `on-chain`: the on-chain smart contracts that are the core of the DEX including the DID layer
+ - `off-chain`: code to build and submit testnet transactions against the DEX smart contracts
 
 
 ## User Guide
@@ -130,16 +138,16 @@ Before getting started, ensure you have completed the [Installation](#installati
 
 #### Additional Requirements for Testing
 - **Python 3.9-3.11**: Required for running the smart contracts and off-chain code (Python 3.12+ is not compatible with opshin versions that work with pycardano 0.9.0)
-- **Node.js 16+**: Required for the frontend components (DID minting tool)
-- **OpShin**: Smart contract compilation framework (installed via requirements.txt)
+- **Node.js 18+**: Required for the DID DEX frontend components
+- **OpShin**: Smart contract compilation framework (installed in `.venv_opshin`)
 
 #### Network Requirements
-- **Ogmios Endpoint**: Access to a Cardano node via Ogmios
+- **Preprod Chain Context**: The off-chain utilities use the configured Preprod Blockfrost context and can fall back to Ogmios if configured.
 - **Preprod Testnet Access**: For testing and demonstration
 
 #### Configure Environment Variables
 
-Set up your Cardano node connection:
+Optional Ogmios settings:
 
 ```bash
 export OGMIOS_API_HOST="localhost"
@@ -147,32 +155,28 @@ export OGMIOS_API_PROTOCOL="ws"
 export OGMIOS_API_PORT="1337"
 ```
 
-#### Optional: Frontend Setup
-
-If using the DID minting tool frontend:
-
-```bash
-cd src/auth_nft_minting_tool/frontend
-npm install
-cd ../../..
-```
-
 ### Initial Setup
 
-The system can be initialized by deploying the smart contracts in the `onchain` directory using the scripts provided in the `offchain` directory.
-For this, you need to have an Ogmios endpoint available and set the environment variables `OGMIOS_API_HOST`, `OGMIOS_API_PROTOCOL` and `OGMIOS_API_PORT` to the respective values (default `localhost`, `ws` and `1337`). 
+#### 1. Wallets
 
-Create and fund two wallets for the trading and voting part.
-You can use the [testnet faucet](https://docs.cardano.org/cardano-testnet/tools/faucet/) to fund them, make sure to select `preprod` network!
+Wallet files are intentionally ignored by git. For the live Preprod commands below, place the supplied demo key bundle in `src/keys/` before running transactions.
+
+```bash
+ls src/keys/diddex_trader1.skey src/keys/diddex_trader1.test_addr
+ls src/keys/diddex_trader2.skey src/keys/diddex_trader2.test_addr
+ls src/keys/did_issuer.skey src/keys/did_issuer.test_addr
+```
+
+Optional fresh wallet generation:
 
 ```bash
 cd src/orderbook
-python3 create_keypair.py trader1
-python3 create_keypair.py trader2
-cd ..  # Return to src directory for subsequent commands
+../../.venv311/bin/python create_keypair.py trader1
+../../.venv311/bin/python create_keypair.py trader2
+cd ../..  # Return to repository root
 ```
 
-Fund these wallets using the [Cardano Preprod Testnet Faucet](https://docs.cardano.org/cardano-testnet/tools/faucet/). **Important**: Select the `preprod` network!
+Fresh wallets must be funded on Preprod and registered through the DID DEX app before they can replace the demo wallet names in live transaction commands.
 
 #### 2. Smart Contracts
 
@@ -181,31 +185,37 @@ The orderbook smart contracts are **pre-compiled** and included in the repositor
 If you need to recompile the contracts:
 
 ```bash
-# Set Python path to include src directory
+# Use the contract compiler venv. OpShin 0.19 requires PyCardano 0.9,
+# while live Conway-era transactions use the runtime .venv311 PyCardano 0.19.
 export PYTHONPATH="$(pwd)/src"
 
 # Compile the orderbook contract
-opshin build spending src/orderbook/on_chain/orderbook.py --recursion-limit 3000 -o src/orderbook/on_chain/build/orderbook
+.venv_opshin/bin/opshin build spending src/orderbook/on_chain/orderbook.py --recursion-limit 3000 -o src/orderbook/on_chain/build/orderbook
 
 # Compile the free mint contract (for test tokens)
-opshin build minting src/orderbook/on_chain/free_mint.py -o src/orderbook/on_chain/build/free_mint
+.venv_opshin/bin/opshin build minting src/orderbook/on_chain/free_mint.py -o src/orderbook/on_chain/build/free_mint
 
 # Compile the DID authentication NFT minting contract
-opshin build minting src/auth_nft_minting_tool/onchain/atala_did_nft.py -o src/auth_nft_minting_tool/onchain/build/atala_did_nft
+ISSUER_PKH=$(.venv_opshin/bin/python - <<'PY'
+from pycardano import PaymentSigningKey, PaymentVerificationKey
+skey = PaymentSigningKey.load("src/keys/did_issuer.skey")
+print(PaymentVerificationKey.from_signing_key(skey).hash().payload.hex())
+PY
+)
+.venv_opshin/bin/opshin build minting src/auth_nft_minting_tool/onchain/atala_did_nft.py "{\"bytes\":\"$ISSUER_PKH\"}" -o src/auth_nft_minting_tool/onchain/build/atala_did_nft
 ```
 
 **Note:** The pre-compiled contracts in `build/` directories are ready to use. Recompilation is only needed if you modify the contract code. Use Python 3.9-3.11 with opshin 0.19.1 for compilation.
 
 #### 3. Deploy Reference Script (Recommended)
 
-Deploying the orderbook contract as a reference script reduces transaction sizes and fees. This is especially important for the orderbook contract (~16KB).
+Deploying the orderbook contract as a reference script keeps the protocol script discoverable on-chain. The current backend includes the compact V1 script directly in cancel/fill transactions for Conway-era PyCardano compatibility.
 
 ```bash
-# From the src directory
-python -m orderbook.off_chain.deploy_reference_script trader1 orderbook
+(cd src && ../.venv311/bin/python -m orderbook.off_chain.deploy_reference_script diddex_trader1 orderbook)
 ```
 
-This stores the contract on-chain (~72 ADA locked) and subsequent operations will reference it instead of including the full script. The reference script location is saved automatically.
+This stores the contract on-chain and saves the reference script location automatically.
 
 **Deployed Reference Script (Preprod Testnet)**:
 - **Reference Script UTxO**: `f54f22ea202fbad0dad17d191b63af091d5afd98929fc0f750c49b6848b4f637#0`
@@ -214,136 +224,51 @@ This stores the contract on-chain (~72 ADA locked) and subsequent operations wil
 
 **Note:** Reference scripts are optional but recommended. If not deployed, the full script will be included in each transaction.
 
-#### 5. Mint Test Tokens
+#### 4. Mint Test Tokens
 
-Create test tokens for trading. Please wait for the blockchain to confirm transaction 1 before calling the code for trader2. 
-
-```bash
-# Navigate to src directory (run module commands from here)
-cd src
-
-python -m orderbook.off_chain.mint_free trader1
-python -m orderbook.off_chain.mint_free trader2
-```
-
-#### 6. Mint DID NFT (Required for Withdrawals/Cancellations)
-
-The DID NFT is required to cancel orders or withdraw funds from the orderbook. Since the Atala PRISM project has been retired, we provide a simple script to mint test DID NFTs.
+Create test tokens for trading. Wait for each transaction to confirm before spending its change output in the next command.
 
 ```bash
-# Mint a DID NFT for trader1
-python -m did_example_mint.mint_did_nft trader1
-
-# Mint a DID NFT for trader2
-python -m did_example_mint.mint_did_nft trader2
+(cd src && ../.venv311/bin/python -m orderbook.off_chain.mint_free diddex_trader1 --token-name muesli --amount 1000000)
+(cd src && ../.venv311/bin/python -m orderbook.off_chain.mint_free diddex_trader2 --token-name swap --amount 1000000)
 ```
 
-**Optional parameters:**
+#### 5. DID NFT Requirement
+
+A DID NFT is required to cancel orders or withdraw matched funds. The supplied demo wallets already hold DID NFTs for the current policy. For new wallets, use the DID DEX frontend registration flow backed by `src/did_dex_backend`.
 
 ```bash
-# Specify a custom DID identifier
-python -m did_example_mint.mint_did_nft trader1 --did-identifier "did:example:123456"
-
-# Specify a custom asset name (hex or string)
-python -m did_example_mint.mint_did_nft trader1 --asset-name "MyDIDToken"
+(cd src && ../.venv311/bin/python - <<'PY'
+from orderbook.off_chain.utils.keys import get_address
+from orderbook.off_chain.utils.network import context
+from did_dex_backend.config import DID_POLICY_ID
+for name in ("diddex_trader1", "diddex_trader2"):
+    address = get_address(name)
+    has_did = any(DID_POLICY_ID in str(utxo.output.amount.multi_asset) for utxo in context.utxos(address))
+    print(f"{name} DID NFT: {'yes' if has_did else 'no'}")
+PY
+)
 ```
-
-**Note:** Each wallet needs its own DID NFT to cancel orders or withdraw matched funds. The NFT policy ID must match the one configured in the orderbook contract.
 
 ### Basic Trading Operations
-
-**Note:** All commands below should be run from the `src` directory.
 
 #### 1. Place an Order
 
 Create a new trading order:
 
 ```bash
-python -m orderbook.off_chain.place_order trader1 trader1 0
+(cd src && ../.venv311/bin/python -m orderbook.off_chain.place_order diddex_trader1 diddex_trader1 0 --sell-amount 10 --buy-amount 5)
 ```
 
 #### 2. Order Cancellation
 
-Cancel an order (requires DID NFT - see step 6 above):
+Cancel an order (requires DID NFT):
 
 ```bash
-python -m orderbook.off_chain.cancel_order trader1
-```
-
-**Important:** You must have a DID NFT in your wallet to cancel orders. If you haven't minted one yet, run:
-
-```bash
-python -m did_example_mint.mint_did_nft trader1
+(cd src && ../.venv311/bin/python -m orderbook.off_chain.cancel_order diddex_trader1 --no-reference-script)
 ```
 
 The smart contract verifies that the DID NFT policy ID matches the expected DID minting policy before allowing the cancellation. 
-
-## Advanced Features
-
-**Note:** All commands in this section should be run from the `src` directory.
-
-### Multi-DID Types and Requirements
-
-The system supports multiple DID verification levels:
-
-- **Basic Verified Users**: Standard DID authentication
-- **Accredited Investors**: Enhanced verification for institutional trading
-- **Business Entities**: Corporate account verification
-
-#### Place Orders with DID Requirements
-
-```bash
-# Require accredited investor status for counterparty
-python -m orderbook.off_chain.place_order trader1 trader2 0 --require-accredited-investor
-
-# Require business entity verification
-python -m orderbook.off_chain.place_order trader1 trader2 0 --require-business-entity
-```
-
-### Advanced Order Types
-
-#### Stop-Loss Orders
-
-Place orders with automatic execution triggers:
-
-```bash
-python -m orderbook.off_chain.place_order trader1 trader2 0 --stop-loss-price 50
-```
-
-#### Minimum Fill Orders
-
-Ensure orders are only filled above a minimum threshold:
-
-```bash
-python -m orderbook.off_chain.place_order trader1 trader2 0 --min-fill-amount 100
-```
-
-### Order Management
-
-#### Atomic Order Modification
-
-Modify existing orders without cancellation:
-
-```bash
-# Update order buy amount
-python -m orderbook.off_chain.modify_order trader1 --new-buy-amount 150
-
-# Update order sell amount
-python -m orderbook.off_chain.modify_order trader1 --new-sell-amount 200
-
-# Update stop-loss trigger price
-python -m orderbook.off_chain.modify_order trader1 --new-stop-loss-price 45
-```
-
-**Note:** Atomic order modification requires including the script twice in a transaction, which may exceed Cardano's 16KB transaction size limit. If you encounter "Transaction size exceeds the max limit" errors, use separate cancel and place order commands instead:
-
-```bash
-# Cancel the existing order
-python -m orderbook.off_chain.cancel_order trader1
-
-# Place a new order with updated parameters
-python -m orderbook.off_chain.place_order trader1 trader1 0 --buy-amount 150
-```
 
 
 ## Testing
@@ -355,7 +280,7 @@ For comprehensive testing documentation, please refer to the [TEST_USER_GUIDE.md
 Run the complete test suite:
 
 ```bash
-python src/tests/run_all_tests.py
+.venv311/bin/python src/tests/run_all_tests.py
 ```
 
 ### Test Categories
@@ -369,11 +294,7 @@ For detailed testing instructions, setup requirements, and troubleshooting, see 
 
 # Demos
 
-## DID Authentication NFT Minting Tool
-
-A hosted version of this authentication NFT minting tool can be found at [demo.did.muesliswap.com](https://demo.did.muesliswap.com).
-
-## OrderbookSmart Contracts
+## Orderbook Smart Contracts
 
 We provide the following references to `preprod` testnet transactions showing relevant smart contracts interactions:
 
@@ -383,6 +304,13 @@ We provide the following references to `preprod` testnet transactions showing re
 - [creation of a new trade](https://preprod.cexplorer.io/tx/66073272374be9e8b2f006a6d858a5792838bce2fdb3d975e26207f874b7fd01)
 
 - [cancel of a trade while presenting a DID Test NFT](https://preprod.cexplorer.io/tx/493b5d334a75d9655f749a027978d452f2a5b799f4622455cc0f0db359ac4148)
+
+Additional smoke-test transactions submitted from this checkout:
+
+- [mint test tokens for diddex_trader1](https://preprod.cexplorer.io/tx/36bddde7e20723ca95e5b49a6328f567e707ee5da78755c6b5fb89e0ca4c5804)
+- [mint test tokens for diddex_trader2](https://preprod.cexplorer.io/tx/6f0deabf9ed88c90a6372579caf6838ae6a0ade373046aab4f0dffdce76f7401)
+- [place order](https://preprod.cexplorer.io/tx/bdec4382ebcfaec156ec2793fee53946969651909a017b885777a39d596f6130)
+- [cancel order with DID NFT](https://preprod.cexplorer.io/tx/d0c3a4e91ec98a4c144b91d18ed18f7fc523f120ec5178f8e4598d6145c961f3)
 
 ## Troubleshooting
 
@@ -427,7 +355,7 @@ We provide the following references to `preprod` testnet transactions showing re
 **Contract compilation failed**
 - Verify OpShin installation:
   ```bash
-  pip install opshin
+  .venv_opshin/bin/python -c "import opshin; print('OpShin OK')"
   ```
 - Ensure PYTHONPATH is set correctly:
   ```bash
@@ -437,13 +365,13 @@ We provide the following references to `preprod` testnet transactions showing re
 - Clear build cache and recompile if issues persist:
   ```bash
   rm -rf src/orderbook/on_chain/build/orderbook/
-  opshin build spending src/orderbook/on_chain/orderbook.py --recursion-limit 3000 -o src/orderbook/on_chain/build/orderbook
+  .venv_opshin/bin/opshin build spending src/orderbook/on_chain/orderbook.py --recursion-limit 3000 -o src/orderbook/on_chain/build/orderbook
   ```
 
 #### DID Authentication Issues
 
 **DID NFT minting failed**
-- Verify the DID demo website is accessible
+- Verify the DID DEX backend and frontend are running
 - Check wallet connectivity in browser
 - Ensure sufficient ADA for minting fees (minimum 2 ADA)
 - Try refreshing the page and reconnecting wallet
@@ -463,7 +391,7 @@ We provide the following references to `preprod` testnet transactions showing re
 #### Memory Usage
 - Monitor system resources during large operations:
   ```bash
-  python src/tests/run_all_tests.py --performance-only
+  .venv311/bin/python src/tests/run_all_tests.py --performance-only
   ```
 
 ### Getting Help
@@ -477,42 +405,3 @@ If you encounter issues not covered here:
    - Error messages
    - System information (OS, Python version)
    - Steps to reproduce
-
-# Internal Testing Report
-
-## Verified Test Transactions (Preprod Testnet)
-
-The following transactions demonstrate successful operation of the DEX protocol with reference scripts:
-
-| Transaction | TX Hash | Description |
-|-------------|---------|-------------|
-| Deploy Reference Script | [`f54f22ea...b4f637`](https://preprod.cexplorer.io/tx/f54f22ea202fbad0dad17d191b63af091d5afd98929fc0f750c49b6848b4f637) | Deployed orderbook contract as reference script (~72 ADA locked) |
-| Mint Test Tokens | [`cb1fba1f...bb6e3a`](https://preprod.cexplorer.io/tx/cb1fba1fd06ecdd99468411c39a8c737b8612a9051c6db4a2d6f0faa44bb6e3a) | Minted 1M test tokens (muesli) for trading |
-| Place Order | [`77dc8072...5e046f`](https://preprod.cexplorer.io/tx/77dc80727e2c5001ff4355db816e723dc58fa00b903a7cd6635c1c12ea5e046f) | Placed sell order (300 muesli @ 3:1 ratio) |
-| Cancel Order (w/ Ref Script) | [`4a3a1743...bd505b`](https://preprod.cexplorer.io/tx/4a3a1743974cc37c6fdc683fe2ca41688dbdb4d086a4989df816f73057bd505b) | Cancelled order using reference script (reduced tx size to 0.63KB) |
-
-## Overview
-
-Internal testing for the Cardano DEX Protocol with DIDs Layer focused on validating the DID minting tool and the orderbook smart contracts. The key objectives were to test the minting of DID NFTs and to ensure the DID layer is integrated properly within the DEX orderbook for user authentication during trades.
-
-## Test Plan
-
-### DID Minting Tool
-Testing was done by accessing the [DID demo website](https://demo.did.muesliswap.com), where a DID NFT was minted, and the transaction was verified on the Preprod Testnet. The minting tool, backend, and on-chain contract interactions worked as expected.
-
-### Orderbook Smart Contracts
-The orderbook smart contracts were deployed using the provided scripts and verified on the Preprod Testnet. Both on-chain and off-chain interactions, including withdrawing matched funds and canceling trades, required valid DID NFTs, ensuring the authentication layer functioned correctly.
-
-## Test Cases and Results
-
-1. **DID Minting Tool**  
-   Minting a DID NFT was successful. Transaction verified on Preprod.
-
-2. **Orderbook Contract Deployment**  
-   Smart contracts were successfully deployed and accessible via the testnet explorer.
-
-3. **Token Minting and Trading**  
-   Test tokens were minted, and a trade was placed with `trader1`. Cancellation without the DID NFT failed as expected, while presenting the DID NFT allowed successful cancellation.
-
-4. **On-chain/Off-chain Interaction**  
-   Off-chain code generated valid transactions, interacting correctly with the on-chain orderbook contracts. DID checks were enforced during all interactions.

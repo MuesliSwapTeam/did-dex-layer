@@ -2,16 +2,12 @@
 # 
 # IMPORTANT: PyCardano Installation
 # ----------------------------------
-# This project includes a pre-built PyCardano wheel in vendor/
-# 
-# Please see the Installation section in README.md for complete setup instructions.
+# The project uses two Python environments:
+# - Contract compilation: OpShin 0.19 + vendored PyCardano 0.9 in .venv_opshin.
+# - Live Preprod backend/runtime: Conway-capable PyCardano >=0.19 in .venv311.
 #
-# Quick Start:
-#   ./install.sh
-#
-# Or manually:
-#   pip install vendor/pycardano-0.9.0-py3-none-any.whl
-#   pip install -r requirements.txt
+# See README.md for exact commands. Do not use the OpShin compiler venv for
+# live Conway-era script-spend transaction submission.
 #
 # ============================================================================
 
@@ -57,4 +53,3 @@ fire
 
 # Cardano Node Communication
 ogmios
-

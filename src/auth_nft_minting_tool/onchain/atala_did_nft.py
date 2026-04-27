@@ -1,10 +1,32 @@
 from opshin.prelude import *
 
 
-def validator(d, r, ctx: ScriptContext) -> None:
-    # assert (
-    #    bytes.fromhex("2ec86e38df0ec36f44da9d8fcb8c6abd15189049382b079ff0c314b9")
-    #    in ctx.tx_info.signatories
-    # ), "Signer did not sign transaction"
+EMPTY_TOKEN_DICT: Dict[TokenName, int] = {}
+
+
+@dataclass()
+class MintDID(PlutusData):
+    CONSTR_ID = 0
+    recipient_pkh: PubKeyHash
+    asset_name: bytes
+
+
+def validator(issuer_pkh: PubKeyHash, redeemer: MintDID, ctx: ScriptContext) -> None:
+    """
+    Permissioned DID NFT minting policy.
+
+    The backend compiles/deploys this policy with the issuer public key hash as
+    the script parameter. A valid mint needs the issuer signature and the
+    recipient wallet signature, and can mint exactly one NFT under this policy.
+    """
     purpose = ctx.purpose
-    assert isinstance(purpose, Minting), "Invalid purpose"
+    assert isinstance(purpose, Minting), "PURPOSE"
+
+    tx_info = ctx.tx_info
+    assert issuer_pkh in tx_info.signatories, "ISSUER"
+    assert redeemer.recipient_pkh in tx_info.signatories, "RECIPIENT"
+
+    own_policy = purpose.policy_id
+    minted = tx_info.mint.get(own_policy, EMPTY_TOKEN_DICT)
+    assert len(minted) == 1, "ONE_ASSET"
+    assert minted.get(redeemer.asset_name, 0) == 1, "ONE_NFT"

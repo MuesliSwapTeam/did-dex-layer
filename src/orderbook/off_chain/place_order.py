@@ -144,75 +144,9 @@ def main(
         min_utxo = 2300000
         return_reward = 650000
 
-        # Create advanced features if any are specified
-        advanced_features = orderbook.Nothing()
-        if (
-            stop_loss_price
-            or min_fill_amount > 0
-            or twap_interval > 0
-            or max_slippage > 0
-        ):
-            # Convert stop-loss price to ratio (using 10000 as denominator for precision)
-            stop_loss_num = int(stop_loss_price * 10000) if stop_loss_price else 0
-            stop_loss_den = 10000 if stop_loss_price else 1
-
-            # Convert TWAP interval from minutes to milliseconds
-            twap_interval_ms = twap_interval * 60 * 1000
-
-            # Convert slippage percentage to basis points
-            slippage_bps = int(max_slippage * 100)
-
-            advanced_features = orderbook.AdvancedOrderFeatures(
-                stop_loss_num,
-                stop_loss_den,
-                min_fill_amount,
-                twap_interval_ms,
-                slippage_bps,
-            )
-
-        # Create DID requirements if any are specified
-        did_requirements = orderbook.Nothing()
-        if (
-            require_accredited_investor
-            or require_business_entity
-            or allow_non_did_trading
-        ):
-            accepted_did_types = []
-
-            if require_accredited_investor:
-                accredited_did_type = orderbook.DIDType(
-                    orderbook.ACCREDITED_INVESTOR_POLICY_ID,
-                    b"",  # Any token name
-                    2,  # Accredited investor level
-                )
-                accepted_did_types.append(accredited_did_type)
-
-            if require_business_entity:
-                business_did_type = orderbook.DIDType(
-                    orderbook.BUSINESS_ENTITY_POLICY_ID,
-                    b"",  # Any token name
-                    3,  # Business entity level
-                )
-                accepted_did_types.append(business_did_type)
-
-            # If no specific types required but allow_non_did_trading is false, require basic DID
-            if (
-                not require_accredited_investor
-                and not require_business_entity
-                and not allow_non_did_trading
-            ):
-                basic_did_type = orderbook.DIDType(
-                    orderbook.DID_NFT_POLICY_ID,
-                    b"",  # Any token name
-                    1,  # Basic verified level
-                )
-                accepted_did_types.append(basic_did_type)
-
-            did_requirements = orderbook.DIDRequirements(
-                accepted_did_types,
-                1,  # Require counterparty DID
-                1 if allow_non_did_trading else 0,  # Allow non-DID trading
-            )
+        expiry_ms = int(
+            (datetime.datetime.now() + datetime.timedelta(days=1)).timestamp() * 1000
+        )
 
         params = orderbook.OrderParams(
             beneficiary_pkh.payload,
@@ -220,11 +154,9 @@ def main(
             orderbook.Token(buy_token[0].payload, buy_token[1].payload),
             orderbook.Token(sell_token[0].payload, sell_token[1].payload),
             1,
-            orderbook.FinitePOSIXTime(int(datetime.datetime.now().timestamp() * 1000)),
+            orderbook.FinitePOSIXTime(expiry_ms),
             return_reward,
             min_utxo,
-            advanced_features,
-            did_requirements,
         )
         # Make datum
         datum = orderbook.Order(

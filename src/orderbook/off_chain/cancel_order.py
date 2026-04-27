@@ -1,5 +1,6 @@
 import datetime
 from typing import Optional
+from pathlib import Path
 
 import click
 import pycardano
@@ -23,7 +24,15 @@ from orderbook.off_chain.utils.network import context, show_tx
 from orderbook.off_chain.utils.to_script_context import to_address, to_tx_out_ref
 
 
-DID_NFT_POLICY_ID = "672ae1e79585ad1543ef6b4b6c8989a17adcea3040f77ede128d9217"
+DID_POLICY_FILE = (
+    Path(__file__).resolve().parents[2]
+    / "auth_nft_minting_tool"
+    / "onchain"
+    / "build"
+    / "atala_did_nft"
+    / "script.policy_id"
+)
+DID_NFT_POLICY_ID = DID_POLICY_FILE.read_text().strip()
 DID_NFT_POLICY_ID = ScriptHash.from_primitive(DID_NFT_POLICY_ID)
 
 
@@ -111,10 +120,10 @@ def main(
         selected_inputs.append(fee_utxo)
 
     all_inputs_sorted = sorted_utxos(selected_inputs + [owner_order_utxo])
-    did_input_index = all_inputs_sorted.index(valid_did_utxo)
+    order_input_index = all_inputs_sorted.index(owner_order_utxo)
     cancel_redeemer = pycardano.Redeemer(
         orderbook.CancelOrder(
-            input_index=did_input_index,
+            input_index=order_input_index,
         )
     )
 
@@ -169,7 +178,7 @@ def main(
     else:
         print("WARNING: No suitable collateral UTxO found!")
 
-    _return_value = owner_order_utxo.output.amount.coin
+    _return_value = owner_order_utxo.output.amount
 
     print("return_value", _return_value)
 

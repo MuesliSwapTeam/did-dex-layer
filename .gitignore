@@ -1,28 +1,43 @@
+# OS / editor
 .DS_Store
-.skey
-.vkey
-.test_addr
-.addr
-__pycache__/
-src/auth_nft_minting_tool/node_modules/
-node_modules/
-keys/
-*.json
-src/.coverage
-src/on_chain/build
-
-# extra venvs
-compile_venv/
-
-# Python virtual environment
-venv/
-env/
-*.egg-info/
-dist/
-build/
-
-# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+src/.coverage
+*.egg-info/
+
+# Python virtual environments
+.venv*/
+venv/
+env/
+compile_venv/
+
+# Node / frontend generated output
+node_modules/
+src/**/node_modules/
+src/did_dex_frontend/dist/
+dist/
+build/
+
+# Runtime state and generated local reports
+runtime/
+test_results_*.json
+*.log
+
+# Local/private Cardano keys and addresses
+keys/
+src/keys/
+*.skey
+*.vkey
+*.addr
+*.test_addr
+
+# Generated local reference-script cache
+src/orderbook/on_chain/build/reference_scripts.json

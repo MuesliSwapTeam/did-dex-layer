@@ -108,6 +108,14 @@ def mk_empty_tx_info(inputs, outputs, signatories) -> orderbook.TxInfo:
     )
 
 
+def mk_did_input(owner_pkh: bytes, tx_id_byte: bytes = b"\xee") -> orderbook.TxInInfo:
+    addr = mk_address(owner_pkh)
+    return orderbook.TxInInfo(
+        orderbook.TxOutRef(orderbook.TxId(tx_id_byte * 32), 0),
+        mk_tx_out(addr, with_did({b"": {b"": 3_000_000}})),
+    )
+
+
 def with_did(value: orderbook.Value) -> orderbook.Value:
     # Ensure the DID NFT policy bucket is present in the input value
     pid = orderbook.DID_NFT_POLICY_ID
@@ -148,8 +156,6 @@ def order_params(owner_pkh, tokens) -> orderbook.OrderParams:
         orderbook.PosInfPOSIXTime(),  # not used by validator paths tested here
         650_000,  # return_reward
         2_000_000,  # min_utxo
-        orderbook.Nothing(),  # advanced_features
-        orderbook.Nothing(),  # did_requirements
     )
 
 
@@ -200,6 +206,26 @@ def test_cancel_fails_without_owner_signature(order_params):
         )
 
 
+def test_cancel_fails_without_did(order_params):
+    order = orderbook.Order(order_params, 100, orderbook.Nothing(), 1_000_000)
+    input_value = {b"": {b"": order_params.min_utxo}}
+    addr = order_params.owner_address
+    tx_in = orderbook.TxInInfo(
+        orderbook.TxOutRef(orderbook.TxId(b"\xbc" * 32), 0),
+        mk_tx_out(addr, input_value, datum=order),
+    )
+    tx_info = mk_empty_tx_info([tx_in], [], [order_params.owner_pkh])
+    context = orderbook.ScriptContext(tx_info, orderbook.Spending(tx_in.out_ref))
+
+    with pytest.raises(AssertionError):
+        orderbook.validator(
+            orderbook.StakingHash(orderbook.PubKeyCredential(order_params.owner_pkh)),
+            order,
+            orderbook.CancelOrder(0),
+            context,
+        )
+
+
 # --------- Tests: FullMatch ---------
 
 
@@ -221,7 +247,8 @@ def test_full_match_sets_output_datum_and_min_value(order_params, tokens):
     expected_datum = orderbook.Order(order_params, 0, tx_in.out_ref, 0)
     tx_out = mk_tx_out(addr, out_value, datum=expected_datum)
 
-    tx_info = mk_empty_tx_info([tx_in], [tx_out], [order_params.owner_pkh])
+    counterparty = mk_did_input(b"\x22" * 28)
+    tx_info = mk_empty_tx_info([tx_in, counterparty], [tx_out], [order_params.owner_pkh])
     context = orderbook.ScriptContext(tx_info, orderbook.Spending(tx_in.out_ref))
 
     # Should not raise
@@ -273,7 +300,8 @@ def test_partial_match_updates_datum_and_value(order_params, tokens):
     )
     tx_out = mk_tx_out(addr, out_value, datum=expected_datum)
 
-    tx_info = mk_empty_tx_info([tx_in], [tx_out], [order_params.owner_pkh])
+    counterparty = mk_did_input(b"\x33" * 28)
+    tx_info = mk_empty_tx_info([tx_in, counterparty], [tx_out], [order_params.owner_pkh])
     context = orderbook.ScriptContext(tx_info, orderbook.Spending(tx_in.out_ref))
 
     # Should not raise
@@ -283,3 +311,46 @@ def test_partial_match_updates_datum_and_value(order_params, tokens):
         orderbook.PartialMatch(0, 0, filled),
         context,
     )
+
+
+def test_partial_match_fails_when_partial_disabled(order_params, tokens):
+    params = orderbook.OrderParams(
+        order_params.owner_pkh,
+        order_params.owner_address,
+        order_params.buy,
+        order_params.sell,
+        0,
+        order_params.expiry_date,
+        order_params.return_reward,
+        order_params.min_utxo,
+    )
+    order = orderbook.Order(params, 100, orderbook.Nothing(), 1_000)
+    input_value = {
+        tokens["sell"].policy_id: {tokens["sell"].token_name: 200},
+        b"": {b"": params.min_utxo},
+    }
+    tx_in = orderbook.TxInInfo(
+        orderbook.TxOutRef(orderbook.TxId(b"\xde" * 32), 0),
+        mk_tx_out(params.owner_address, input_value, datum=order),
+    )
+    out_value = {
+        tokens["sell"].policy_id: {tokens["sell"].token_name: 120},
+        tokens["buy"].policy_id: {tokens["buy"].token_name: 40},
+        b"": {b"": params.min_utxo - 400},
+    }
+    tx_out = mk_tx_out(
+        params.owner_address,
+        out_value,
+        datum=orderbook.Order(params, 60, tx_in.out_ref, 600),
+    )
+    counterparty = mk_did_input(b"\x44" * 28)
+    tx_info = mk_empty_tx_info([tx_in, counterparty], [tx_out], [params.owner_pkh])
+    context = orderbook.ScriptContext(tx_info, orderbook.Spending(tx_in.out_ref))
+
+    with pytest.raises(AssertionError):
+        orderbook.validator(
+            orderbook.StakingHash(orderbook.PubKeyCredential(params.owner_pkh)),
+            order,
+            orderbook.PartialMatch(0, 0, 40),
+            context,
+        )
