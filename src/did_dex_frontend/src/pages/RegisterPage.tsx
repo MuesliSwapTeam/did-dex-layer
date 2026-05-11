@@ -26,7 +26,7 @@ import PendingActionsIcon from '@mui/icons-material/PendingActions';
 import SecurityIcon from '@mui/icons-material/Security';
 import TokenIcon from '@mui/icons-material/Token';
 import VerifiedUserIcon from '@mui/icons-material/VerifiedUser';
-import { api } from '../api';
+import { api, sanitizeErrorMessage } from '../api';
 import { fallbackConfig } from '../configDefaults';
 import { signAndSubmit } from '../wallet';
 import type { WalletState } from '../types';
@@ -444,7 +444,7 @@ export default function RegisterPage({
                   )}
                   {actionError && (
                     <Alert severity="error">
-                      {actionError instanceof Error ? actionError.message : 'Registration failed'}
+                      {actionError instanceof Error ? sanitizeErrorMessage(actionError.message, 'Registration failed') : 'Registration failed'}
                     </Alert>
                   )}
                   {hasDid && (

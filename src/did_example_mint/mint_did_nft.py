@@ -1,7 +1,7 @@
 """
 Simple script to mint example DID NFTs for testing the orderbook.
 
-This script mints a DID NFT using the atala_did_nft minting contract.
+This script mints a DID NFT using the did_nft minting contract.
 The NFT can be used with the orderbook for authentication.
 """
 import click
@@ -31,15 +31,15 @@ def get_did_contract():
     
     # Path to the built DID contract
     # From src/did_example_mint/mint_did_nft.py, we need to go to src/auth_nft_minting_tool/...
-    script_dir = Path(__file__).parent.parent / "auth_nft_minting_tool" / "onchain" / "build" / "atala_did_nft"
+    script_dir = Path(__file__).parent.parent / "auth_nft_minting_tool" / "onchain" / "build" / "did_nft"
     script_cbor_path = script_dir / "script.cbor"
     
     if not script_cbor_path.exists():
         raise FileNotFoundError(
             f"❌ DID contract not found at {script_cbor_path}. "
             "Please compile the contract first using:\n"
-            "opshin build minting src/auth_nft_minting_tool/onchain/atala_did_nft.py "
-            "-o src/auth_nft_minting_tool/onchain/build/atala_did_nft"
+            "opshin build minting src/auth_nft_minting_tool/onchain/did_nft.py "
+            "-o src/auth_nft_minting_tool/onchain/build/did_nft"
         )
     
     with open(script_cbor_path) as f:
@@ -75,7 +75,7 @@ def main(
     Mint a DID NFT for the specified wallet.
     
     This creates a simple DID NFT that can be used with the orderbook for authentication.
-    The NFT is minted using the atala_did_nft contract.
+    The NFT is minted using the did_nft contract.
     
     Example:
         python -m did_example_mint.mint_did_nft trader1
@@ -174,4 +174,3 @@ def main(
 
 if __name__ == "__main__":
     main()
-

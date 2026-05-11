@@ -12,7 +12,7 @@ import {
   XAxis,
   YAxis
 } from 'recharts';
-import { api } from '../api';
+import { api, sanitizeErrorMessage } from '../api';
 import { fallbackConfig } from '../configDefaults';
 import { formatNumber, formatPrice } from '../format';
 import { PREPROD_WALLET_ERROR, signAndSubmit } from '../wallet';
@@ -114,13 +114,13 @@ export default function DexPage({
         : did.data?.hasDid && !didPolicyMatches
           ? `Wallet DID policy mismatch. Required ${short(appConfig.didPolicyId, 10, 6)}.`
         : did.data?.addressValid === false
-          ? did.data.error ?? PREPROD_WALLET_ERROR
+          ? sanitizeErrorMessage(did.data.error, PREPROD_WALLET_ERROR)
         : did.error
           ? did.error instanceof Error
-            ? did.error.message
+            ? sanitizeErrorMessage(did.error.message, 'DID status check failed.')
             : 'DID status check failed.'
           : did.data?.chainAvailable === false
-            ? `DID status unavailable: ${did.data.error ?? 'chain index is not reachable.'}`
+            ? `DID status unavailable: ${sanitizeErrorMessage(did.data.error, 'chain index is not reachable.')}`
             : 'Trading requires a valid DID NFT in the connected wallet.';
   const allOrders = orders.data?.orders ?? [];
   const recentFills = trades.data?.trades ?? analytics.data?.recentFills ?? [];
@@ -166,7 +166,9 @@ export default function DexPage({
   const sellTicker = isBuy ? quoteTicker : baseTicker;
   const buyTicker = isBuy ? baseTicker : quoteTicker;
   const ticketRate = ticket.sellAmount > 0 ? ticket.buyAmount / ticket.sellAmount : null;
-  const balanceError = balance.error instanceof Error ? balance.error.message : 'Wallet balance check failed.';
+  const balanceError = balance.error instanceof Error
+    ? sanitizeErrorMessage(balance.error.message, 'Wallet balance check failed.')
+    : 'Wallet balance check failed.';
   const baseBalance = balance.data?.base.amount ?? 0;
   const quoteBalance = balance.data?.quote.amount ?? 0;
   const sellBalance = isBuy ? quoteBalance : baseBalance;
@@ -575,7 +577,7 @@ export default function DexPage({
 
                 {actionError && (
                   <div className="tx-alert error">
-                    {actionError instanceof Error ? actionError.message : 'Transaction failed'}
+                    {actionError instanceof Error ? sanitizeErrorMessage(actionError.message, 'Transaction failed') : 'Transaction failed'}
                   </div>
                 )}
                 {lastTxHash && (
@@ -660,7 +662,7 @@ export default function DexPage({
               </div>
               {actionError && (
                 <div className="tx-alert error">
-                  {actionError instanceof Error ? actionError.message : 'Transaction failed'}
+                  {actionError instanceof Error ? sanitizeErrorMessage(actionError.message, 'Transaction failed') : 'Transaction failed'}
                 </div>
               )}
               {lastTxHash && (

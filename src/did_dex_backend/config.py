@@ -26,7 +26,7 @@ DID_BUILD_DIR = (
     / "auth_nft_minting_tool"
     / "onchain"
     / "build"
-    / "atala_did_nft"
+    / "did_nft"
 )
 
 NETWORK = "preprod"

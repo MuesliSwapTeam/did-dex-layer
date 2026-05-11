@@ -29,7 +29,7 @@ DID_POLICY_FILE = (
     / "auth_nft_minting_tool"
     / "onchain"
     / "build"
-    / "atala_did_nft"
+    / "did_nft"
     / "script.policy_id"
 )
 DID_NFT_POLICY_ID = DID_POLICY_FILE.read_text().strip()

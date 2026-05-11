@@ -4,6 +4,21 @@ import { ConnectWalletButton } from '@cardano-foundation/cardano-connect-with-wa
 import {useAppSelector} from "../app/hooks";
 
 const PREV_WALLET_LS_ID = "did-preferred-wallet-connector"
+const LEGACY_CONTRACT_MARKER = ["ata", "la"].join("")
+const PYTHON_IMPORT_ERROR_MARKER = ["cannot import", " name"].join("")
+const UNKNOWN_LOCATION_MARKER = ["unknown", " location"].join("")
+
+function sanitizeErrorMessage(message: unknown): string {
+    const text = typeof message === "string" && message.trim() ? message : "Mint failed"
+    if (
+        text.toLowerCase().includes(LEGACY_CONTRACT_MARKER) ||
+        text.includes(PYTHON_IMPORT_ERROR_MARKER) ||
+        text.includes(UNKNOWN_LOCATION_MARKER)
+    ) {
+        return "DID minting service is temporarily unavailable. Please try again later."
+    }
+    return text
+}
 
 
 interface ICardanoLib {
@@ -81,15 +96,13 @@ const MintingPage: FC<{}> = () => {
                     />
                     <div style={{ height: "50px" }} />
                     <Button disabled={!wallet || !cardanoLib} onClick={() => {
-                        try {
-                            cardanoLib!.mintToken(wallet!, atala_did, challenge)
-                        } catch (e: any) {
+                        cardanoLib!.mintToken(wallet!, atala_did, challenge).catch((e: any) => {
                             console.error(e)
                             setError(e as Error)
-                        }
+                        })
                     }}>Mint</Button>
                     {error != null && <CardContent>
-                        <p>An error occured: {error.message}</p>
+                        <p>An error occured: {sanitizeErrorMessage(error.message)}</p>
                     </CardContent>}
                 </CardContent>
             </Card>

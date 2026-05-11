@@ -43,6 +43,7 @@ cryptography==36.0.2
 pytest>=7.0.0
 pytest-asyncio==0.23.5
 pytest-cov>=4.0.0
+cbor2<6
 
 # System Monitoring (for performance tests)
 psutil>=5.9.0

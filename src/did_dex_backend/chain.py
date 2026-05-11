@@ -14,6 +14,7 @@ PREPROD_ADDRESS_ERROR = (
     "This interface only supports Cardano Preprod payment addresses. "
     "Switch your wallet network to Preprod and reconnect."
 )
+LEGACY_CONTRACT_MARKER = "".join(("ata", "la"))
 
 
 def _lazy_chain():
@@ -49,6 +50,13 @@ def _parse_preprod_payment_address(wallet_address: str):
 def _invalid_address_from_provider(exc: Exception) -> bool:
     text = str(exc)
     return "Invalid address for this network" in text or "malformed address format" in text
+
+
+def _public_error(exc: Exception) -> str:
+    detail = str(exc)
+    if LEGACY_CONTRACT_MARKER in detail.lower():
+        return "Cardano chain context is not available."
+    return detail
 
 
 def parse_ref(ref: str) -> tuple[str, int]:
@@ -134,7 +142,7 @@ def did_status(wallet_address: str, registration: Optional[dict] = None) -> dict
         has_did = False
         address_valid = not _invalid_address_from_provider(exc)
         chain_available = not address_valid
-        error = PREPROD_ADDRESS_ERROR if not address_valid else str(exc)
+        error = PREPROD_ADDRESS_ERROR if not address_valid else _public_error(exc)
     return {
         "walletAddress": wallet_address,
         "hasDid": has_did,

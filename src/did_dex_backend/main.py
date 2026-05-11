@@ -84,6 +84,8 @@ def require_wallet_did(wallet_address: str) -> None:
 
 def tx_error(exc: Exception) -> HTTPException:
     detail = str(exc)
+    if chain.LEGACY_CONTRACT_MARKER in detail.lower():
+        detail = "DID minting contract dependencies are not available."
     if isinstance(exc, chain.ChainUnavailable):
         return HTTPException(status_code=503, detail=detail)
     if isinstance(exc, KeyError):

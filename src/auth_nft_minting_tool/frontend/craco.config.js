@@ -17,6 +17,10 @@ module.exports = {
         ...(webpackConfig.experiments || {}),
         syncWebAssembly: true,
       }
+      webpackConfig.optimization = {
+        ...(webpackConfig.optimization || {}),
+        concatenateModules: false,
+      }
       webpackConfig.resolve.fallback = {
         buffer: require.resolve('buffer/'),
       }

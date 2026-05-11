@@ -15,7 +15,7 @@ import {
 import AddCircleIcon from '@mui/icons-material/AddCircle';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import TokenIcon from '@mui/icons-material/Token';
-import { api } from '../api';
+import { api, sanitizeErrorMessage } from '../api';
 import { fallbackConfig } from '../configDefaults';
 import { signAndSubmit } from '../wallet';
 import type { AssetConfig, WalletState } from '../types';
@@ -181,7 +181,7 @@ export default function TokenMintPage({ wallet }: { wallet?: WalletState; setWal
                 )}
                 {mintMutation.error && (
                   <Alert severity="error">
-                    {mintMutation.error instanceof Error ? mintMutation.error.message : 'Mint failed'}
+                    {mintMutation.error instanceof Error ? sanitizeErrorMessage(mintMutation.error.message, 'Mint failed') : 'Mint failed'}
                   </Alert>
                 )}
                 {txHash && (

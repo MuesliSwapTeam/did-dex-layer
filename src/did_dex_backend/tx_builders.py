@@ -22,7 +22,7 @@ def _lazy_tx():
             TransactionOutput,
             Value,
         )
-        from auth_nft_minting_tool.onchain import atala_did_nft
+        from auth_nft_minting_tool.onchain import did_nft
         from orderbook.on_chain import orderbook
         from orderbook.off_chain.util import sorted_utxos
         from orderbook.off_chain.utils.contracts import find_reference_utxo, get_contract
@@ -32,7 +32,7 @@ def _lazy_tx():
         from orderbook.off_chain.utils.to_script_context import to_address, to_tx_out_ref
         from orderbook.off_chain.utils.transaction_builder import TransactionBuilder
     except Exception as exc:  # pragma: no cover - depends on Cardano toolchain
-        raise ChainUnavailable(str(exc)) from exc
+        raise ChainUnavailable("Cardano transaction builder dependencies are not available.") from exc
     if context is None:
         raise ChainUnavailable("No Cardano chain context is configured.")
     return {
@@ -47,7 +47,7 @@ def _lazy_tx():
         "ScriptHash": ScriptHash,
         "TransactionOutput": TransactionOutput,
         "Value": Value,
-        "atala_did_nft": atala_did_nft,
+        "did_nft": did_nft,
         "orderbook": orderbook,
         "sorted_utxos": sorted_utxos,
         "find_reference_utxo": find_reference_utxo,
@@ -114,7 +114,7 @@ def build_did_mint_transaction(registration: dict, extra_signing_keys: list[Any]
         )
     )
     redeemer = deps["Redeemer"](
-        deps["atala_did_nft"].MintDID(recipient_pkh, bytes(asset_name))
+        deps["did_nft"].MintDID(recipient_pkh, bytes(asset_name))
     )
     builder.add_minting_script(did_script, redeemer)
     builder.mint = minted

@@ -13,7 +13,7 @@ The test suite consists of two main categories:
 Install the required test dependencies:
 
 ```bash
-pip install -r src/tests/requirements.txt
+./install.sh
 ```
 
 This installs:
@@ -23,7 +23,7 @@ This installs:
 
 Verify installation:
 ```bash
-pytest --version
+.venv311/bin/python -m pytest --version
 ```
 
 ## Running Tests
@@ -32,7 +32,7 @@ pytest --version
 
 Execute all tests:
 ```bash
-python src/tests/run_all_tests.py
+.venv311/bin/python src/tests/run_all_tests.py
 ```
 
 ### Test Categories
@@ -41,29 +41,29 @@ Run specific test categories:
 
 **Smart Contract Tests:**
 ```bash
-python src/tests/run_all_tests.py --contracts-only
+.venv311/bin/python src/tests/run_all_tests.py --contracts-only
 ```
 
 **Integration Tests:**
 ```bash
-python src/tests/run_all_tests.py --integration-only
+.venv311/bin/python src/tests/run_all_tests.py --integration-only
 ```
 
 **DID Authentication Tests:**
 ```bash
-python src/tests/run_all_tests.py --did-only
+.venv311/bin/python src/tests/run_all_tests.py --did-only
 ```
 
 **Performance Tests:**
 ```bash
-python src/tests/run_all_tests.py --performance-only
+.venv311/bin/python src/tests/run_all_tests.py --performance-only
 ```
 
 ### Verbose Output
 
 For detailed test execution information:
 ```bash
-python src/tests/run_all_tests.py --verbose
+.venv311/bin/python src/tests/run_all_tests.py --verbose
 ```
 
 ## Test Architecture
@@ -104,7 +104,7 @@ Test results are automatically saved as JSON files with timestamps for CI/CD int
 
 Run tests without blocking the terminal:
 ```bash
-python src/tests/run_all_tests.py > test_output.txt 2>&1 &
+.venv311/bin/python src/tests/run_all_tests.py > test_output.txt 2>&1 &
 ```
 
 ### Individual Test Files
@@ -112,10 +112,10 @@ python src/tests/run_all_tests.py > test_output.txt 2>&1 &
 Execute specific test modules using pytest:
 ```bash
 # Integration tests only
-python -m pytest src/tests/test_suite/test_integration.py -v
+.venv311/bin/python -m pytest src/tests/test_suite/test_integration.py -v
 
 # Contract tests only  
-python -m pytest src/tests/test_suite/test_orderbook_contracts.py -v
+.venv311/bin/python -m pytest src/tests/test_suite/test_orderbook_contracts.py -v
 ```
 
 ## Troubleshooting
@@ -124,30 +124,29 @@ python -m pytest src/tests/test_suite/test_orderbook_contracts.py -v
 
 **ModuleNotFoundError**: Install dependencies first
 ```bash
-pip install -r src/tests/requirements.txt
+./install.sh
 ```
 
-**Command not found: python**: Use `python3` on macOS/Linux
+**Command not found: python3.11**: Install Python 3.11 or set `PYTHON_BIN` when running the installer
 ```bash
-python3 src/tests/run_all_tests.py
+PYTHON_BIN=python3 ./install.sh
 ```
 
 **Import errors**: Verify you're in the project root directory
 ```bash
-pwd  # Should show path ending in muesliswap-did-orderbook
+pwd  # Should show path ending in did-dex-layer
 ```
 
 **All tests failing**: Check Python version compatibility
 ```bash
-python --version  # Should be 3.9+
+.venv311/bin/python --version  # Should be 3.9, 3.10, or 3.11
 ```
 
 ### Debug Mode
 
 For detailed debugging information:
 ```bash
-python src/tests/run_all_tests.py --verbose
+.venv311/bin/python src/tests/run_all_tests.py --verbose
 ```
 
 Check generated test result files (JSON format) for detailed error traces.
-

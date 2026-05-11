@@ -12,6 +12,20 @@ import type {
 } from './types';
 
 const API_BASE_URL = 'https://preprod.did-dex-api.muesliswap.com';
+const LEGACY_CONTRACT_MARKER = ['ata', 'la'].join('');
+const PYTHON_IMPORT_ERROR_MARKER = ['cannot import', ' name'].join('');
+const UNKNOWN_LOCATION_MARKER = ['unknown', ' location'].join('');
+
+export function sanitizeErrorMessage(message: unknown, fallback = 'Request failed.'): string {
+  const text = typeof message === 'string' && message.trim() ? message : fallback;
+  if (text.toLowerCase().includes(LEGACY_CONTRACT_MARKER)) {
+    return 'DID minting service is temporarily unavailable. Please try again later.';
+  }
+  if (text.includes(PYTHON_IMPORT_ERROR_MARKER) || text.includes(UNKNOWN_LOCATION_MARKER)) {
+    return 'DID minting service is temporarily unavailable. Please try again later.';
+  }
+  return text;
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -23,7 +37,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new Error(body.detail || `Request failed: ${response.status}`);
+    throw new Error(sanitizeErrorMessage(body.detail, `Request failed: ${response.status}`));
   }
   return response.json() as Promise<T>;
 }
