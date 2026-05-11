@@ -1,5 +1,5 @@
-import Loader from './helpers/loader.js'
-import { fromHex } from './helpers/utils.js'
+import Loader from '../helpers/loader.js'
+import { fromHex } from '../helpers/utils.js'
 
 // FOR NOW WE ONLY HAVE ONE DATUM TYPE WITH CONSTRUCTOR INTEGER 0
 export const getOrderbookDatum = (
