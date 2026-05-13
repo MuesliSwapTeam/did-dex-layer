@@ -61,7 +61,7 @@ echo "==> Installing OpShin compiler environment (.venv_opshin)"
 
 echo "==> Installing Node packages"
 (cd src/did_dex_frontend && "$NPM_BIN" ci)
-(cd src/auth_nft_minting_tool/frontend && "$NPM_BIN" ci)
+(cd src/auth_nft_minting_tool/frontend && "$NPM_BIN" ci --ignore-scripts)
 (cd src/auth_nft_minting_tool && "$NPM_BIN" ci)
 (cd src/auth_nft_minting_tool/server && "$NPM_BIN" ci)
 
